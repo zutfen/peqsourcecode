@@ -2416,6 +2416,23 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, CastingSlot slot, in
 
 	if(!IsValidSpell(spell_id))
 		return false;
+	
+	// Store original target for reference
+	Mob* original_target = spell_target;
+	
+	// Apply implied targeting logic (use target at cast time, not current)
+	spell_target = GetImpliedSpellTarget(spell_id, spell_target);
+	
+	// If smart targeting returned nullptr, spell fails gracefully
+	if (original_target && !spell_target) {
+		return false;
+	}
+	
+	// Optional: Log when target changes for debugging
+	if (IsClient() && spell_target != original_target && spell_target != nullptr) {
+		CastToClient()->Message(Chat::SpellCrit, "Smart targeting: casting on %s", 
+								spell_target->GetCleanName());
+	}
 
 	//Death Touch targets the pet owner instead of the pet when said pet is tanking.
 	if ((RuleB(Spells, CazicTouchTargetsPetOwner) && spell_target && spell_target->HasOwner()) && !spell_target->IsBot() && (spell_id == SPELL_CAZIC_TOUCH || spell_id == SPELL_TOUCH_OF_VINITRAS)) {

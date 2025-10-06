@@ -680,6 +680,159 @@ void Mob::SetInvisible(uint8 state, bool set_on_bonus_calc) {
 	BreakCharmPetIfConditionsMet();
 }
 
+
+// Smart Targeting: Determines the implied target based on spell type and current target
+Mob* Mob::GetImpliedSpellTarget(uint16 spell_id, Mob* current_target) {
+	// Skip smart targeting if no target or rule is disabled
+	if (!current_target || !RuleB(Spells, UseImpliedTargeting)) {
+		return current_target;
+	}
+
+	// Skip if spell is invalid
+	if (!IsValidSpell(spell_id)) {
+		return current_target;
+	}
+
+	// Exclude PBAoE spells (they center on caster, target doesn't matter)
+	if (spells[spell_id].aoerange > 0 && spells[spell_id].target_type == ST_AECaster) {
+		return current_target;
+	}
+
+	// Exclude self-only spells
+	if (spells[spell_id].target_type == ST_Self) {
+		return current_target;
+	}
+
+	// Skip if targeting a corpse
+	if (current_target->IsCorpse()) {
+		return current_target;
+	}
+
+	// Exclude pet-only spells (these should already have correct targeting)
+	if (spells[spell_id].target_type == ST_Pet) {
+		return current_target;
+	}
+
+	// Exclude group spells - let native /tgb logic handle these
+	if (spells[spell_id].target_type == ST_Group || 
+		spells[spell_id].target_type == ST_GroupTeleport ||
+		spells[spell_id].target_type == ST_AEBard) {
+		return current_target;
+	}
+
+	// Determine if spell is beneficial or detrimental
+	bool is_beneficial = IsBeneficialSpell(spell_id);
+	
+	// Case 1: Targeting a Pet or Charmed NPC
+	if (current_target->IsNPC() && (current_target->IsPet() || current_target->GetOwnerID())) {
+		if (is_beneficial) {
+			// Beneficial spell on pet/charm -> hit the pet directly
+			return current_target;
+		} else {
+			// Detrimental spell on pet/charm -> redirect to pet's NPC target
+			Mob* pets_target = current_target->GetTarget();
+			
+			// Must be an NPC target (not another player)
+			if (!pets_target || !pets_target->IsNPC()) {
+				if (IsClient()) {
+					CastToClient()->Message(Chat::Red, "Your pet's target is not valid for this spell.");
+				}
+				return nullptr; // Fail gracefully
+			}
+			
+			// Validate and return the pet's target
+			return ValidateImpliedTarget(spell_id, pets_target, current_target);
+		}
+	}
+	
+	// Case 2: Targeting a regular NPC (hostile mob, not a pet)
+	else if (current_target->IsNPC()) {
+		if (is_beneficial) {
+			// Beneficial spell on hostile NPC -> redirect to player it's targeting
+			Mob* npcs_target = current_target->GetTarget();
+			
+			if (!npcs_target || !npcs_target->IsClient()) {
+				if (IsClient()) {
+					CastToClient()->Message(Chat::Red, "Target has no valid target for a beneficial spell.");
+				}
+				return nullptr; // Fail gracefully
+			}
+			
+			// Validate and return the NPC's player target
+			return ValidateImpliedTarget(spell_id, npcs_target, current_target);
+		} else {
+			// Detrimental spell on NPC -> hit NPC directly
+			return current_target;
+		}
+	}
+	
+	// Case 3: Targeting a Player (not self)
+	else if (current_target->IsClient() && current_target != this) {
+		if (is_beneficial) {
+			// Beneficial spell on player -> hit player directly
+			return current_target;
+		} else {
+			// Detrimental spell on player -> redirect to player's NPC target
+			Mob* players_target = current_target->GetTarget();
+			
+			if (!players_target || !players_target->IsNPC()) {
+				if (IsClient()) {
+					CastToClient()->Message(Chat::Red, "Player's target is not valid for this spell.");
+				}
+				return nullptr; // Fail gracefully
+			}
+			
+			// Validate and return the player's NPC target
+			return ValidateImpliedTarget(spell_id, players_target, current_target);
+		}
+	}
+	
+	// Case 4: Targeting self or other edge cases - no smart targeting needed
+	return current_target;
+}
+
+// Helper function to validate range, LoS, and spell restrictions on implied target
+Mob* Mob::ValidateImpliedTarget(uint16 spell_id, Mob* implied_target, Mob* original_target) {
+    if (!implied_target) {
+        return nullptr;
+    }
+    
+    // Check Line of Sight
+    if (!CheckLosFN(implied_target)) {
+        if (IsClient()) {
+            CastToClient()->MessageString(Chat::Red, CANT_SEE_TARGET);
+        }
+        return nullptr;
+    }
+    
+    // Check Range
+    float range = GetActSpellRange(spell_id, spells[spell_id].range);
+    float dist = DistanceSquared(m_Position, implied_target->GetPosition());
+    
+    if (dist > (range * range)) {
+        if (IsClient()) {
+            CastToClient()->MessageString(Chat::Red, TARGET_OUT_OF_RANGE);
+        }
+        return nullptr;
+    }
+    
+    // Check if we can attack this target (for detrimental spells)
+    if (!IsBeneficialSpell(spell_id) && !IsAttackAllowed(implied_target)) {
+        if (IsClient()) {
+            CastToClient()->Message(Chat::Red, "You cannot attack that target.");
+        }
+        return nullptr;
+    }
+    
+    // Note: Spell target type restrictions (undead-only, summoned-only, etc.) 
+    // are typically validated later in the spell casting process.
+    // If you need to validate them here, you can add checks like:
+    // if (!IsValidSpellTarget(spell_id, implied_target)) { return nullptr; }
+    
+    return implied_target;
+}
+
+
 void Mob::ZeroInvisibleVars(uint8 invisible_type)
 {
 	switch (invisible_type) {
@@ -5343,6 +5496,47 @@ void Mob::ExecWeaponProc(const EQ::ItemInstance* inst, uint16 spell_id, Mob* on,
 			}
 		}
 	}
+
+// Helper function to validate range, LoS, and spell restrictions on implied target
+Mob* Mob::ValidateImpliedTarget(uint16 spell_id, Mob* implied_target, Mob* original_target) {
+    if (!implied_target) {
+        return nullptr;
+    }
+    
+    // Check Line of Sight
+    if (!CheckLosFN(implied_target)) {
+        if (IsClient()) {
+            CastToClient()->MessageString(Chat::Red, CANT_SEE_TARGET);
+        }
+        return nullptr;
+    }
+    
+    // Check Range
+    float range = GetActSpellRange(spell_id, spells[spell_id].range);
+    float dist = DistanceSquared(m_Position, implied_target->GetPosition());
+    
+    if (dist > (range * range)) {
+        if (IsClient()) {
+            CastToClient()->MessageString(Chat::Red, TARGET_OUT_OF_RANGE);
+        }
+        return nullptr;
+    }
+    
+    // Check if we can attack this target (for detrimental spells)
+    if (!IsBeneficialSpell(spell_id) && !IsAttackAllowed(implied_target)) {
+        if (IsClient()) {
+            CastToClient()->Message(Chat::Red, "You cannot attack that target.");
+        }
+        return nullptr;
+    }
+    
+    // Note: Spell target type restrictions (undead-only, summoned-only, etc.) 
+    // are typically validated later in the spell casting process.
+    // If you need to validate them here, you can add checks like:
+    // if (!IsValidSpellTarget(spell_id, implied_target)) { return nullptr; }
+    
+    return implied_target;
+}
 
 	bool  twin_proc        = false;
 	int32 twin_proc_chance = 0;

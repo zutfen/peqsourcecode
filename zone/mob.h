@@ -321,7 +321,7 @@ public:
 	/**
 	 ************************************************
 	 * Appearance
-	 ************************************************
+	 ************************************************	
 	 */
 
 	EQ::InternalTextureProfile mob_texture_profile = {};
@@ -389,6 +389,8 @@ public:
 		uint32 inventory_slot = 0xFFFFFFFF, int16 resist_adjust = 0);
 	bool SpellFinished(uint16 spell_id, Mob *target, EQ::spells::CastingSlot slot = EQ::spells::CastingSlot::Item, int mana_used = 0,
 		uint32 inventory_slot = 0xFFFFFFFF, int16 resist_adjust = 0, bool isproc = false, int level_override = -1, uint32 timer = 0xFFFFFFFF, uint32 timer_duration = 0, bool from_casted_spell = false, uint32 aa_id = 0);
+	Mob* GetImpliedSpellTarget(uint16 spell_id, Mob* current_target);
+	Mob* ValidateImpliedTarget(uint16 spell_id, Mob* implied_target, Mob* original_target);
 	void SendBeginCast(uint16 spell_id, uint32 casttime);
 	virtual bool SpellOnTarget(
 		uint16 spell_id,
@@ -521,7 +523,7 @@ public:
 	int GetBuffStatValueBySlot(uint8 slot, const char* stat_identifier);
 	virtual bool GetIllusionBlock() const { return false; }
 
-	//Basic Stats/Inventory
+		//Basic Stats/Inventory
 	virtual void SetLevel(uint8 in_level, bool command = false) { level = in_level; }
 	void TempName(const char *newname = nullptr);
 	void SetTargetable(bool on);

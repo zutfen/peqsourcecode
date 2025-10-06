@@ -3860,7 +3860,7 @@ void Mob::BuffProcess()
 					// Check if this is a permanent buff situation:
 					// 1. Player self-cast beneficial spell, OR
 					// 2. Player casting beneficial spell on their own pet, OR
-					// 3. Group member casting beneficial spell on you (while you remain grouped)
+					// 3. Group member casting beneficial spell on you (while you remain grouped, timer starts once ungrouped)
 					bool is_permanent_buff = false;
 
 					if (IsBeneficialSpell(buffs[buffs_i].spellid)) {

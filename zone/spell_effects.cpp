@@ -3853,54 +3853,11 @@ void Mob::BuffProcess()
 
 			// DF_Permanent uses -1 DF_Aura uses -4 but we need to check negatives for some spells for some reason?
 			if (spells[buffs[buffs_i].spellid].buff_duration_formula != DF_Permanent &&
-				spells[buffs[buffs_i].spellid].buff_duration_formula != DF_Aura &&
+			    spells[buffs[buffs_i].spellid].buff_duration_formula != DF_Aura &&
 				buffs[buffs_i].ticsremaining != PERMANENT_BUFF_DURATION) {
 				if(!zone->BuffTimersSuspended() || !IsSuspendableSpell(buffs[buffs_i].spellid))
 				{
-					// Check if this is a permanent buff situation:
-					// 1. Player self-cast beneficial spell, OR
-					// 2. Player casting beneficial spell on their own pet, OR
-					// 3. Group member casting beneficial spell on you (while you remain grouped, timer starts once ungrouped)
-					bool is_permanent_buff = false;
-
-					if (IsBeneficialSpell(buffs[buffs_i].spellid)) {
-						// Case 1: Player casting on themselves
-						if (IsClient() && buffs[buffs_i].casterid == GetID()) {
-							is_permanent_buff = true;
-						}
-						// Case 2: Player casting on their own pet
-						else if (IsPet() && GetOwner() && GetOwner()->IsClient() &&
-								buffs[buffs_i].casterid == GetOwner()->GetID()) {
-							is_permanent_buff = true;
-						}
-						// Case 3: Buff from another player while grouped
-						else if (IsClient() && GetGroup()) {
-							// Try to find the caster in the zone
-							Mob* caster = entity_list.GetMob(buffs[buffs_i].casterid);
-
-							if (caster && caster->IsClient()) {
-								// Caster is in zone - check if still in same group
-								Group* caster_group = caster->GetGroup();
-								if (caster_group && caster_group == GetGroup()) {
-									is_permanent_buff = true;
-								}
-							}
-							else if (!caster) {
-								// Caster not in zone (zoned out/offline)
-								// Keep permanent as long as YOU are still in a group
-								is_permanent_buff = true;
-							}
-						}
-					}
-
-					// Refresh permanent buffs to original duration, otherwise decrement
-					if (is_permanent_buff) {
-						Mob* caster = entity_list.GetMob(buffs[buffs_i].casterid);
-						int original_duration = CalcBuffDuration(caster, this, buffs[buffs_i].spellid);
-						buffs[buffs_i].ticsremaining = original_duration;
-					} else {
-						--buffs[buffs_i].ticsremaining;
-					}
+					--buffs[buffs_i].ticsremaining;
 
 					if (buffs[buffs_i].ticsremaining < 0) {
 						LogSpells("Buff [{}] in slot [{}] has expired. Fading", buffs[buffs_i].spellid, buffs_i);

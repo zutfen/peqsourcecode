@@ -23,6 +23,8 @@ Desktop.ini
 vcpkg/
 perl/
 
+# Uncategorized
+
 # Environment Variables
 .env
 .env.local

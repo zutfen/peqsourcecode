@@ -3893,8 +3893,12 @@ void Mob::BuffProcess()
 						}
 					}
 
-					// Only decrement timer if NOT a permanent buff
-					if (!is_permanent_buff) {
+					// Refresh permanent buffs to original duration, otherwise decrement
+					if (is_permanent_buff) {
+						Mob* caster = entity_list.GetMob(buffs[buffs_i].casterid);
+						int original_duration = CalcBuffDuration(caster, this, buffs[buffs_i].spellid);
+						buffs[buffs_i].ticsremaining = original_duration;
+					} else {
 						--buffs[buffs_i].ticsremaining;
 					}
 

@@ -1055,19 +1055,29 @@ bool Client::Save(uint8 iCommitNow) {
 
 	m_pp.lastlogin = time(nullptr);
 
-	if (GetPet() && GetPet()->CastToNPC()->GetPetSpellID() && !dead) {
-		NPC *pet = GetPet()->CastToNPC();
-		m_petinfo.SpellID = pet->CastToNPC()->GetPetSpellID();
-		m_petinfo.HP = pet->GetHP();
-		m_petinfo.Mana = pet->GetMana();
-		pet->GetPetState(m_petinfo.Buffs, m_petinfo.Items, m_petinfo.Name);
-		m_petinfo.petpower = pet->GetPetPower();
-		m_petinfo.size = pet->GetSize();
-		m_petinfo.taunting = pet->CastToNPC()->IsTaunting();
-	} else {
-		memset(&m_petinfo, 0, sizeof(struct PetInfo));
-	}
-	database.SavePetInfo(this);
+	const bool allow_save_while_dead = RuleB(Pets, PetPersistsThroughDeath);
+
+if (GetPet() &&
+    GetPet()->CastToNPC()->GetPetSpellID() &&
+    (!dead || allow_save_while_dead)) {
+
+    NPC* pet = GetPet()->CastToNPC();
+    m_petinfo.SpellID  = pet->GetPetSpellID();
+    m_petinfo.HP       = pet->GetHP();
+    m_petinfo.Mana     = pet->GetMana();
+    pet->GetPetState(m_petinfo.Buffs, m_petinfo.Items, m_petinfo.Name);
+    m_petinfo.petpower = pet->GetPetPower();
+    m_petinfo.size     = pet->GetSize();
+    m_petinfo.taunting = pet->IsTaunting();
+
+} else {
+    // Only zero if we truly don’t have a pet (not merely “dead” with the rule on)
+    if (!GetPet() || !GetPet()->CastToNPC()->GetPetSpellID()) {
+        memset(&m_petinfo, 0, sizeof(struct PetInfo));
+    }
+}
+database.SavePetInfo(this);
+
 
 	if(tribute_timer.Enabled()) {
 		m_pp.tribute_time_remaining = tribute_timer.GetRemainingTime();

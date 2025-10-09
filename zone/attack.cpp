@@ -1910,15 +1910,28 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 
 	InterruptSpell();
 
+	// Cache the current pet pointer before we do anything that might depop/disown it
 	Mob* m_pet = GetPet();
+
+	// If enabled, auto-suspend a normal (non-charmed) pet BEFORE we disown
+	if (RuleB(Pets, AutoSuspendOnDeath) && m_pet && !m_pet->IsCharmed()) {
+		// true: include buffs/gear in the suspended snapshot
+		SuspendMinion(true);
+		// Note: SuspendMinion() persists the pet and depops it.
+		// The m_pet pointer may be stale after this call; do not use it except for the charmed check below.
+	}
+
+	// Original behavior: disown the pet handle on death (safe even if we just suspended)
 	SetPet(0);
 	SetHorseId(0);
 	ShieldAbilityClearVariables();
 	dead = true;
 
+	// If the "pet" was actually a charmed NPC, clear the charm
 	if (m_pet && m_pet->IsCharmed()) {
 		m_pet->BuffFadeByEffect(SpellEffect::Charm);
 	}
+
 
 	if (GetMerc()) {
 		GetMerc()->Suspend();

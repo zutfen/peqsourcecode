@@ -1055,9 +1055,9 @@ bool Client::Save(uint8 iCommitNow) {
 
 	m_pp.lastlogin = time(nullptr);
 
-	const bool allow_save_while_dead = RuleB(Pets, PetPersistsThroughDeath);
+	const bool allow_save_while_dead = RuleB(Pets, AutoSuspendOnDeath);
 
-if (GetPet() &&
+	if (GetPet() &&
     GetPet()->CastToNPC()->GetPetSpellID() &&
     (!dead || allow_save_while_dead)) {
 
@@ -5524,6 +5524,52 @@ void Client::UpdateRestTimer(uint32 new_timer)
 		}
 	}
 }
+// Recreate the pet from the suspended snapshot and clear the snapshot.
+void Client::UnsuspendMinion()
+{
+    // Nothing to do if no snapshot or we already have a pet
+    if (HasPet() || m_suspendedminion.SpellID == 0)
+        return;
+
+    // --- Summon the base pet ---
+    // Most PEQ/older trees use: MakePet(uint16 spell_id, const char* pettype)
+    // If your tree has a 1-arg version: MakePet(m_suspendedminion.SpellID);
+    MakePet(static_cast<uint16>(m_suspendedminion.SpellID), nullptr);
+
+    // --- Restore simple runtime state (portable across branches) ---
+    if (GetPet() && GetPet()->IsNPC()) {
+        NPC* pet = GetPet()->CastToNPC();
+
+        // HP/Mana
+        pet->SetHP(std::max<int>(1, m_suspendedminion.HP));
+        pet->SetMana(m_suspendedminion.Mana);
+
+        // Behavior: park it so it doesn't immediately aggro
+        pet->WipeHateList();
+        pet->SetTarget(nullptr);
+        pet->SetPetOrder(SPO_Guard);
+        pet->SetTaunting(m_suspendedminion.taunting);
+
+        // Name (use whatever setter your tree provides)
+        if (m_suspendedminion.Name[0]) {
+            // Try these in order; keep the first that compiles in your tree:
+            // pet->SetPetName(m_suspendedminion.Name);
+            // pet->SetCleanName(m_suspendedminion.Name);
+            // pet->SetName(m_suspendedminion.Name);
+        }
+
+        // NOTE: Some trees have NPC::SetPetState(buffs, items, name) – if yours does,
+        // you can restore items/buffs with it. If not, keep this minimal restore;
+        // items/buffs will rebuild naturally as the player re-buffs/re-equips the pet.
+        // Example (ONLY if it exists in your tree):
+        // pet->SetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
+    }
+
+    // Clear snapshot & persist
+    memset(&m_suspendedminion, 0, sizeof(PetInfo));
+    database.SavePetInfo(this);
+}
+
 
 void Client::SendPVPStats()
 {

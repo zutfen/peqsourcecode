@@ -1934,7 +1934,24 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 			// (Optional) drop detrimental temp auras that keep combat ticking
 			// pet->BuffFadeDetrimental(); // only if your branch exposes it on NPC
 		}
+if (p && p->IsNPC()) {
+	NPC* pet = p->CastToNPC();
 
+	// Snapshot everything ourselves to guarantee buffs/items are captured
+	memset(&m_suspendedminion, 0, sizeof(PetInfo));
+	m_suspendedminion.SpellID  = pet->GetPetSpellID();
+	m_suspendedminion.HP       = pet->GetHP();
+	m_suspendedminion.Mana     = pet->GetMana();
+	m_suspendedminion.petpower = pet->GetPetPower();
+	m_suspendedminion.size     = pet->GetSize();
+	m_suspendedminion.taunting = pet->IsTaunting();
+
+    // This fills Buffs + Items
+    pet->GetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
+}
+
+// Now that the snapshot is definitely populated, suspend (despawn)
+SuspendMinion(true);
 		// Now that the pet is peaceful, snapshot+despawn
 		SuspendMinion(true);
 		LogInfo("[AutoSuspend][Death] Suspended snapshot: SpellID={} HP={} Mana={} (rule={})",

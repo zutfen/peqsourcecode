@@ -5566,15 +5566,8 @@ void Client::UpdateRestTimer(uint32 new_timer)
         return;
     }
 
-    // --- Recreate the pet using the *same* path as the stock connect restore ---
-    // Preferred on your branch:
-    //   MakePoweredPet(spell_id, spells[spell_id].teleport_zone, petpower, name, size);
-    // and then SetPetState(buffs, items) to restore gear/buffs.
-    //
-    // If your compiler errors on MakePoweredPet, fall back to MakePet(...) below.
-
+    // --- Recreate the pet
     if (is_valid_spell(src->SpellID)) {
-        // Try the powered path (comment out if your branch lacks it)
         MakePoweredPet(static_cast<uint16>(src->SpellID),
                        spells[src->SpellID].teleport_zone,
                        src->petpower,
@@ -5584,11 +5577,14 @@ void Client::UpdateRestTimer(uint32 new_timer)
         if (GetPet() && GetPet()->IsNPC()) {
             NPC* pet = GetPet()->CastToNPC();
 
-           // Cast away constness to match NPC::SetPetState signature
+           // Cast away constness to match NPC::SetPetState
 			pet->SetPetState(
 				const_cast<SpellBuff_Struct*>(src->Buffs),
 				const_cast<uint32*>(src->Items)
 			);
+
+			// Buffs
+			pet->SendPetBuffsToClient();
 
             // HP/Mana + behavior
             pet->SetHP(std::max<int>(1, src->HP));
@@ -5599,7 +5595,7 @@ void Client::UpdateRestTimer(uint32 new_timer)
             pet->SetTaunting(src->taunting);
         }
     } else {
-        // Fallback (unlikely because we validated above): classic MakePet path
+        // Fallback
         MakePet(static_cast<uint16>(src->SpellID), nullptr);
 
         if (GetPet() && GetPet()->IsNPC()) {
@@ -5623,9 +5619,12 @@ void Client::UpdateRestTimer(uint32 new_timer)
     }
     database.SavePetInfo(this);
 
-    LogInfo("[AutoSuspend][Unsuspend] Restored from {} SpellID={}",
-            used_suspendedminion ? "m_suspendedminion" : "m_petinfo",
-            static_cast<uint32>(src->SpellID));
+    int saved_buffs = 0;
+	for (int i = 0; i < BUFF_COUNT; ++i) {
+		if (IsValidSpell(src->Buffs[i].spellid)) ++saved_buffs;
+	}
+	LogInfo("[AutoSuspend][Unsuspend] restoring SpellID={} with {} buffs and items[0]={}",
+			static_cast<uint32>(src->SpellID), saved_buffs, src->Items[0]);
 }
 
 void Client::SendPVPStats()

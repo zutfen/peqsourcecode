@@ -768,6 +768,16 @@ void Client::CompleteConnect()
 
 	entity_list.SendIllusionWearChange(this);
 
+	// Auto-restore suspended pet after loading into the world
+	if (RuleB(Pets, AutoSuspendOnDeath) && !HasPet()) {
+    // Most branches have HasSuspendedMinion(); if yours doesn’t, use the struct check below.
+    if (HasSuspendedMinion()) {
+        UnsuspendMinion();
+    }
+    // Fallback for branches without the helper:
+    // if (m_suspendedminion.SpellID) { UnsuspendMinion(); }
+	}
+
 	SendWearChangeAndLighting(EQ::textures::LastTexture);
 	Mob* pet = GetPet();
 	if (pet) {

@@ -1911,6 +1911,9 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 	InterruptSpell();
 
 	Mob* m_pet = GetPet();
+		if (RuleB(Pets, AutoSuspendOnDeath) && HasPet() && !GetPet()->IsCharmed()) {
+		SuspendMinion(true); // snapshot + depop
+	}
 	SetPet(0);
 	SetHorseId(0);
 	ShieldAbilityClearVariables();

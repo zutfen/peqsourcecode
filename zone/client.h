@@ -1959,10 +1959,15 @@ private:
 public:
 	ExternalHandinMoneyReturned GetExternalHandinMoneyReturned() { return m_external_handin_money_returned; }
 	std::vector<uint32_t> GetExternalHandinItemsReturned() { return m_external_handin_items_returned; }
+<<<<<<< HEAD
 
 	bool HasSuspendedMinion() const { return m_suspendedminion.SpellID != 0; }
     void UnsuspendMinion();
 
+=======
+    bool HasSuspendedMinion() const { return m_suspendedminion.SpellID != 0; }
+    void UnsuspendMinion();
+>>>>>>> 96ee2f2f5b18639366432e715cd67b4260f445c4
 	// used only for testing
 	inline void SetCharacterId(uint32_t id) { character_id = id; }
 

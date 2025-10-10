@@ -20,6 +20,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <algorithm>
 
 // for windows compile
 #ifndef _WINDOWS
@@ -5524,97 +5525,106 @@ void Client::UpdateRestTimer(uint32 new_timer)
 		}
 	}
 }
-// Recreate the pet from the suspended snapshot and clear the snapshot.
-void Client::UnsuspendMinion()
+	// Is there a suspended pet snapshot to restore?
+	bool Client::HasSuspendedMinion() const
+	{
+		auto is_valid_spell = [](uint32 sid) {
+			return sid > 0 && sid <= SPDAT_RECORDS;
+		};
+
+		// Prefer explicit suspended snapshot when valid
+		if (is_valid_spell(m_suspendedminion.SpellID))
+			return true;
+
+		// Fallback: DB-loaded petinfo (when we have no live pet)
+		if (!HasPet() && is_valid_spell(m_petinfo.SpellID))
+			return true;
+
+		return false;
+	}
+
+
+	// Recreate the pet from the suspended snapshot and clear the snapshot.
+	void Client::UnsuspendMinion()
 {
-    // Nothing to do if no snapshot or we already have a pet
-    if (HasPet() || m_suspendedminion.SpellID == 0)
+    if (HasPet())
         return;
 
-    // --- Summon the base pet ---
-    // Most PEQ/older trees use: MakePet(uint16 spell_id, const char* pettype)
-    // If your tree has a 1-arg version: MakePet(m_suspendedminion.SpellID);
-    MakePet(static_cast<uint16>(m_suspendedminion.SpellID), nullptr);
+    auto is_valid_spell = [](uint32 sid){ return sid > 0 && sid <= SPDAT_RECORDS; };
 
-    // --- Restore simple runtime state (portable across branches) ---
-    if (GetPet() && GetPet()->IsNPC()) {
-        NPC* pet = GetPet()->CastToNPC();
+    // Choose the snapshot: prefer suspendedminion if valid, else petinfo if valid
+    const PetInfo* src = nullptr;
+    bool used_suspendedminion = false;
 
-        // HP/Mana
-        pet->SetHP(std::max<int>(1, m_suspendedminion.HP));
-        pet->SetMana(m_suspendedminion.Mana);
-
-        // Behavior: park it so it doesn't immediately aggro
-        pet->WipeHateList();
-        pet->SetTarget(nullptr);
-        pet->SetPetOrder(SPO_Guard);
-        pet->SetTaunting(m_suspendedminion.taunting);
-
-        // Name (use whatever setter your tree provides)
-        if (m_suspendedminion.Name[0]) {
-            // Try these in order; keep the first that compiles in your tree:
-            // pet->SetPetName(m_suspendedminion.Name);
-            // pet->SetCleanName(m_suspendedminion.Name);
-            // pet->SetName(m_suspendedminion.Name);
-        }
-
-        // NOTE: Some trees have NPC::SetPetState(buffs, items, name) – if yours does,
-        // you can restore items/buffs with it. If not, keep this minimal restore;
-        // items/buffs will rebuild naturally as the player re-buffs/re-equips the pet.
-        // Example (ONLY if it exists in your tree):
-        // pet->SetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
-    }
-
-    // Clear snapshot & persist
-    memset(&m_suspendedminion, 0, sizeof(PetInfo));
-    database.SavePetInfo(this);
-}
-
-
-// Recreate the pet from the suspended snapshot and clear the snapshot.
-void Client::UnsuspendMinion()
-{
-    // Nothing to do if no snapshot or we already have a pet
-    if (HasPet() || m_suspendedminion.SpellID == 0)
+    if (is_valid_spell(m_suspendedminion.SpellID)) {
+        src = &m_suspendedminion;
+        used_suspendedminion = true;
+    } else if (is_valid_spell(m_petinfo.SpellID)) {
+        src = &m_petinfo;
+    } else {
+        LogInfo("[AutoSuspend][Unsuspend] No valid snapshot to restore");
         return;
-
-    // --- Summon the base pet ---
-    // Most PEQ/older trees use: MakePet(uint16 spell_id, const char* pettype)
-    // If your tree has a 1-arg version: MakePet(m_suspendedminion.SpellID);
-    MakePet(static_cast<uint16>(m_suspendedminion.SpellID), nullptr);
-
-    // --- Restore simple runtime state (portable across branches) ---
-    if (GetPet() && GetPet()->IsNPC()) {
-        NPC* pet = GetPet()->CastToNPC();
-
-        // HP/Mana
-        pet->SetHP(std::max<int>(1, m_suspendedminion.HP));
-        pet->SetMana(m_suspendedminion.Mana);
-
-        // Behavior: park it so it doesn't immediately aggro
-        pet->WipeHateList();
-        pet->SetTarget(nullptr);
-        pet->SetPetOrder(SPO_Guard);
-        pet->SetTaunting(m_suspendedminion.taunting);
-
-        // Name (use whatever setter your tree provides)
-        if (m_suspendedminion.Name[0]) {
-            // Try these in order; keep the first that compiles in your tree:
-            // pet->SetPetName(m_suspendedminion.Name);
-            // pet->SetCleanName(m_suspendedminion.Name);
-            // pet->SetName(m_suspendedminion.Name);
-        }
-
-        // NOTE: Some trees have NPC::SetPetState(buffs, items, name) – if yours does,
-        // you can restore items/buffs with it. If not, keep this minimal restore;
-        // items/buffs will rebuild naturally as the player re-buffs/re-equips the pet.
-        // Example (ONLY if it exists in your tree):
-        // pet->SetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
     }
 
-    // Clear snapshot & persist
-    memset(&m_suspendedminion, 0, sizeof(PetInfo));
+    // --- Recreate the pet
+    if (is_valid_spell(src->SpellID)) {
+        MakePoweredPet(static_cast<uint16>(src->SpellID),
+                       spells[src->SpellID].teleport_zone,
+                       src->petpower,
+                       src->Name,
+                       src->size);
+
+        if (GetPet() && GetPet()->IsNPC()) {
+            NPC* pet = GetPet()->CastToNPC();
+
+           // Cast away constness to match NPC::SetPetState
+			pet->SetPetState(
+				const_cast<SpellBuff_Struct*>(src->Buffs),
+				const_cast<uint32*>(src->Items)
+			);
+
+			// Buffs
+			pet->SendPetBuffsToClient();
+
+            // HP/Mana + behavior
+            pet->SetHP(std::max<int>(1, src->HP));
+            pet->SetMana(src->Mana);
+            pet->WipeHateList();
+            pet->SetTarget(nullptr);
+            pet->SetPetOrder(SPO_Guard);
+            pet->SetTaunting(src->taunting);
+        }
+    } else {
+        // Fallback
+        MakePet(static_cast<uint16>(src->SpellID), nullptr);
+
+        if (GetPet() && GetPet()->IsNPC()) {
+            NPC* pet = GetPet()->CastToNPC();
+            pet->SetHP(std::max<int>(1, src->HP));
+            pet->SetMana(src->Mana);
+            pet->WipeHateList();
+            pet->SetTarget(nullptr);
+            pet->SetPetOrder(SPO_Guard);
+            pet->SetTaunting(src->taunting);
+            // If available:
+            // pet->SetPetState(src->Buffs, src->Items);
+        }
+    }
+
+    // Clear whichever snapshot we used & persist
+    if (used_suspendedminion) {
+        memset(&m_suspendedminion, 0, sizeof(PetInfo));
+    } else {
+        memset(&m_petinfo, 0, sizeof(PetInfo));
+    }
     database.SavePetInfo(this);
+
+    int saved_buffs = 0;
+	for (int i = 0; i < BUFF_COUNT; ++i) {
+		if (IsValidSpell(src->Buffs[i].spellid)) ++saved_buffs;
+	}
+	LogInfo("[AutoSuspend][Unsuspend] restoring SpellID={} with {} buffs and items[0]={}",
+			static_cast<uint32>(src->SpellID), saved_buffs, src->Items[0]);
 }
 
 void Client::SendPVPStats()

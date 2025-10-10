@@ -1913,9 +1913,56 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 	// Cache the current pet pointer before we do anything that might depop/disown it
 	Mob* m_pet = GetPet();
 <<<<<<< HEAD
-		if (RuleB(Pets, AutoSuspendOnDeath) && HasPet() && !GetPet()->IsCharmed()) {
-		SuspendMinion(true); // snapshot + depop
+	if (RuleB(Pets, AutoSuspendOnDeath) && HasPet() && !GetPet()->IsCharmed()) {
+		// --- Calm pet so suspend will succeed ---
+		Mob* p = GetPet();
+		if (p && p->IsNPC()) {
+			NPC* pet = p->CastToNPC();
+
+			// 1) Clear the pet's own hate
+			pet->WipeHateList();
+			pet->SetTarget(nullptr);
+
+			// 2) Remove this pet from *other* mobs' hate lists
+			// (Some forks expose one or both of these; keep any that compile)
+			entity_list.RemoveFromHateLists(pet);     // preferred
+			// entity_list.RemoveFromTargets(pet, true); // fallback if above doesn't exist
+
+			// 3) Stop any AI “attack” behavior and park the pet
+			pet->AI_Stop();
+			pet->SetTaunting(false);
+			pet->SetPetOrder(SPO_Guard);
+
+			// (Optional) drop detrimental temp auras that keep combat ticking
+			// pet->BuffFadeDetrimental(); // only if your branch exposes it on NPC
+		}
+if (p && p->IsNPC()) {
+	NPC* pet = p->CastToNPC();
+
+	// Snapshot everything ourselves to guarantee buffs/items are captured
+	memset(&m_suspendedminion, 0, sizeof(PetInfo));
+	m_suspendedminion.SpellID  = pet->GetPetSpellID();
+	m_suspendedminion.HP       = pet->GetHP();
+	m_suspendedminion.Mana     = pet->GetMana();
+	m_suspendedminion.petpower = pet->GetPetPower();
+	m_suspendedminion.size     = pet->GetSize();
+	m_suspendedminion.taunting = pet->IsTaunting();
+
+    // This fills Buffs + Items
+    pet->GetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
+}
+
+// Now that the snapshot is definitely populated, suspend (despawn)
+SuspendMinion(true);
+		// Now that the pet is peaceful, snapshot+despawn
+		SuspendMinion(true);
+		LogInfo("[AutoSuspend][Death] Suspended snapshot: SpellID={} HP={} Mana={} (rule={})",
+        static_cast<uint32>(m_suspendedminion.SpellID),
+        static_cast<int>(m_suspendedminion.HP),
+        static_cast<int>(m_suspendedminion.Mana),
+        RuleB(Pets, AutoSuspendOnDeath));
 	}
+
 =======
 
 	// If enabled, auto-suspend a normal (non-charmed) pet BEFORE we disown

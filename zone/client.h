@@ -1961,7 +1961,7 @@ public:
 	std::vector<uint32_t> GetExternalHandinItemsReturned() { return m_external_handin_items_returned; }
 <<<<<<< HEAD
 
-	bool HasSuspendedMinion() const { return m_suspendedminion.SpellID != 0; }
+	bool HasSuspendedMinion() const;
     void UnsuspendMinion();
 
 =======

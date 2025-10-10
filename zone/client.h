@@ -1960,7 +1960,7 @@ public:
 	ExternalHandinMoneyReturned GetExternalHandinMoneyReturned() { return m_external_handin_money_returned; }
 	std::vector<uint32_t> GetExternalHandinItemsReturned() { return m_external_handin_items_returned; }
 
-	bool HasSuspendedMinion() const { return m_suspendedminion.SpellID != 0; }
+	bool HasSuspendedMinion() const;
     void UnsuspendMinion();
 
 	// used only for testing

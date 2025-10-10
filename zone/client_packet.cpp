@@ -768,14 +768,23 @@ void Client::CompleteConnect()
 
 	entity_list.SendIllusionWearChange(this);
 
-	// Auto-restore suspended pet after loading into the world
-	if (RuleB(Pets, AutoSuspendOnDeath) && !HasPet()) {
-    // Most branches have HasSuspendedMinion(); if yours doesn’t, use the struct check below.
-    if (HasSuspendedMinion()) {
-        UnsuspendMinion();
-    }
-    // Fallback for branches without the helper:
-    // if (m_suspendedminion.SpellID) { UnsuspendMinion(); }
+	//Logging Pet Snapshot
+	auto is_valid_spell = [](uint32 sid){ return sid > 0 && sid <= SPDAT_RECORDS; };
+
+LogInfo("[AutoSuspend][Connect-mid] rule={} aabon={} spellbon={} itembon={} SuspendedSpellID={} (valid={})",
+        RuleB(Pets, AutoSuspendOnDeath),
+        (aabonuses.ZoneSuspendMinion != 0),
+        (spellbonuses.ZoneSuspendMinion != 0),
+        (itembonuses.ZoneSuspendMinion != 0),
+        static_cast<uint32>(m_suspendedminion.SpellID),
+        is_valid_spell(m_suspendedminion.SpellID));
+
+	if ( (!RuleB(Pets, AutoSuspendOnDeath) || !is_valid_spell(m_suspendedminion.SpellID)) &&
+		!aabonuses.ZoneSuspendMinion &&
+		!spellbonuses.ZoneSuspendMinion &&
+		!itembonuses.ZoneSuspendMinion )
+	{
+		memset(&m_suspendedminion, 0, sizeof(PetInfo));
 	}
 
 	SendWearChangeAndLighting(EQ::textures::LastTexture);
@@ -942,7 +951,7 @@ void Client::CompleteConnect()
 			strncpy(data->player_name, GetCleanName(), sizeof(data->player_name));
 
 			worldserver.SendPacket(out);
-			safe_delete(out)
+			safe_delete(out);
 		}
 	}
 
@@ -1014,6 +1023,11 @@ void Client::CompleteConnect()
 		// send
 		worldserver.SendPacket(p);
 		safe_delete(p);
+	}
+
+	// --- Auto-restore suspended pet (late hook so DB/char state is loaded) ---
+	if (RuleB(Pets, AutoSuspendOnDeath) && !HasPet() && HasSuspendedMinion()) {
+    	UnsuspendMinion();
 	}
 
 	RecordStats();
@@ -1767,10 +1781,22 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 			m_petinfo.SpellID = 0;
 		}
 	}
-	/* Moved here so it's after where we load the pet data. */
-	if (!aabonuses.ZoneSuspendMinion && !spellbonuses.ZoneSuspendMinion && !itembonuses.ZoneSuspendMinion) {
-		memset(&m_suspendedminion, 0, sizeof(PetInfo));
+
+	// Preserve a death-suspended pet across zone only if the rule is enabled
+	// AND we actually have a valid snapshot. Otherwise, clear it so random
+	// stack/heap bytes don't look like a pet.
+	auto is_valid_spell = [](uint32 sid) {
+		return sid > 0 && sid <= SPDAT_RECORDS;
+	};
+
+	if ( (!RuleB(Pets, AutoSuspendOnDeath) || !is_valid_spell(m_suspendedminion.SpellID)) &&
+		!aabonuses.ZoneSuspendMinion &&
+		!spellbonuses.ZoneSuspendMinion &&
+		!itembonuses.ZoneSuspendMinion )
+	{
+    	memset(&m_suspendedminion, 0, sizeof(PetInfo));
 	}
+
 
 	/* Server Zone Entry Packet */
 	outapp = new EQApplicationPacket(OP_ZoneEntry, sizeof(ServerZoneEntry_Struct));

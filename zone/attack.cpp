@@ -1911,9 +1911,39 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 	InterruptSpell();
 
 	Mob* m_pet = GetPet();
-		if (RuleB(Pets, AutoSuspendOnDeath) && HasPet() && !GetPet()->IsCharmed()) {
-		SuspendMinion(true); // snapshot + depop
+	if (RuleB(Pets, AutoSuspendOnDeath) && HasPet() && !GetPet()->IsCharmed()) {
+		// --- Calm pet so suspend will succeed ---
+		Mob* p = GetPet();
+		if (p && p->IsNPC()) {
+			NPC* pet = p->CastToNPC();
+
+			// 1) Clear the pet's own hate
+			pet->WipeHateList();
+			pet->SetTarget(nullptr);
+
+			// 2) Remove this pet from *other* mobs' hate lists
+			// (Some forks expose one or both of these; keep any that compile)
+			entity_list.RemoveFromHateLists(pet);     // preferred
+			// entity_list.RemoveFromTargets(pet, true); // fallback if above doesn't exist
+
+			// 3) Stop any AI “attack” behavior and park the pet
+			pet->AI_Stop();
+			pet->SetTaunting(false);
+			pet->SetPetOrder(SPO_Guard);
+
+			// (Optional) drop detrimental temp auras that keep combat ticking
+			// pet->BuffFadeDetrimental(); // only if your branch exposes it on NPC
+		}
+
+		// Now that the pet is peaceful, snapshot+despawn
+		SuspendMinion(true);
+		LogInfo("[AutoSuspend][Death] Suspended snapshot: SpellID={} HP={} Mana={} (rule={})",
+        static_cast<uint32>(m_suspendedminion.SpellID),
+        static_cast<int>(m_suspendedminion.HP),
+        static_cast<int>(m_suspendedminion.Mana),
+        RuleB(Pets, AutoSuspendOnDeath));
 	}
+
 	SetPet(0);
 	SetHorseId(0);
 	ShieldAbilityClearVariables();

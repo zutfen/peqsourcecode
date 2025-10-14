@@ -68,6 +68,11 @@ struct PetVirtualGear {
     std::vector<uint32> weapon_proc_spells;
     std::vector<int16>  weapon_proc_rates;
 
+    // --- Change detection / throttling caches ---
+    uint64 last_bag_sig;     // signature of current pet bag contents
+    uint16 last_prim_model;  // last pushed primary weapon model
+    uint16 last_sec_model;   // last pushed secondary weapon model
+
     Timer rescan_timer;
 
     PetVirtualGear() {
@@ -83,6 +88,9 @@ struct PetVirtualGear {
         accuracy_bonus = 0;
         avoidance_bonus = 0;
         mr_bonus = fr_bonus = cr_bonus = pr_bonus = dr_bonus = corruption_bonus = 0;
+        last_bag_sig   = 0;
+        last_prim_model = 0;
+        last_sec_model  = 0;
         rescan_timer.Disable();
     }
 
@@ -104,6 +112,7 @@ struct PetVirtualGear {
         ranged_weapon = WeaponData();
         weapon_proc_spells.clear();
         weapon_proc_rates.clear();
+        // Intentionally keep last_bag_sig / last_*_model to avoid thrashing visuals on Reset()
     }
 };
 
@@ -131,13 +140,29 @@ public:
         if (m_virtual_gear.rescan_timer.Enabled()) m_virtual_gear.rescan_timer.Trigger();
         else ScanOwnerForPetGear();
     }
+    // Signature-gated periodic rescan (only heavy-scan when bag changes)
     void ProcessPetGearRescan() {
-        if (m_virtual_gear.rescan_timer.Check()) {
+        if (!m_virtual_gear.rescan_timer.Check())
+            return;
+
+        uint64 sig = 0;
+        bool have_items = ComputePetBagSignature(sig);
+        if (!have_items) sig = 0; // normalize "no items" to deterministic signature
+
+        if (sig != m_virtual_gear.last_bag_sig) {
+            m_virtual_gear.last_bag_sig = sig;
             ScanOwnerForPetGear();
+        } else {
+            // no change -> skip heavy work
         }
     }
 
-	bool Process() override;
+    // Actually make the pet display weapons
+    void   UpdatePetWeaponAppearance();
+    static uint16 WeaponModelFromItem(const EQ::ItemData* it);
+
+    // Pet item update process override
+    bool Process() override;
 
     // ---- Access to the full gear structure
     const PetVirtualGear& GetVirtualGear() const { return m_virtual_gear; }
@@ -238,6 +263,13 @@ protected:
 
     // Apply virtual weapon ratios to pet min/max using a non-stacking baseline
     void ApplyVirtualWeaponDamageBonus(int base_min, int base_max);
+
+    // --- Fast bag-change detector (implemented in pets.cpp) ---
+    bool ComputePetBagSignature(uint64 &out_sig);
+    static inline void SigMix(uint64 &h, uint64 v) {
+        // lightweight 64-bit mix; good enough for change detection
+        h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    }
 };
 
 #endif // PETS_H

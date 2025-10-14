@@ -57,14 +57,47 @@ void Mob::CalcBonuses()
 
 void NPC::CalcBonuses()
 {
-	memset(&itembonuses, 0, sizeof(StatBonuses));
+    memset(&itembonuses, 0, sizeof(StatBonuses));
+    if (GetOwner() || RuleB(NPC, UseItemBonusesForNonPets)) {
+        CalcItemBonuses(&itembonuses);
+    }
 
-	if (GetOwner() || RuleB(NPC, UseItemBonusesForNonPets)) {
-		CalcItemBonuses(&itembonuses);
-	}
+    // Apply pet gear bag bonuses (treat as item bonuses)
+    if (IsPet() && RuleB(Pets, PetGearBagVirtualEquip)) {
+        Pet* pet = CastToPet();
+        if (pet && pet->HasPetGearEquipped()) {
+            itembonuses.AC += pet->GetPetGearAC();
+            itembonuses.HP += pet->GetPetGearHP();
+            itembonuses.Mana += pet->GetPetGearMana();
+            itembonuses.Endurance += pet->GetVirtualGear().endurance_bonus;
 
-	// This has to happen last, so we actually take the item bonuses into account.
-	Mob::CalcBonuses();
+            itembonuses.STR += pet->GetPetGearSTR();
+            itembonuses.STA += pet->GetPetGearSTA();
+            itembonuses.AGI += pet->GetPetGearAGI();
+            itembonuses.DEX += pet->GetPetGearDEX();
+            itembonuses.WIS += pet->GetPetGearWIS();
+            itembonuses.INT += pet->GetPetGearINT();
+            itembonuses.CHA += pet->GetPetGearCHA();
+
+            itembonuses.ATK += pet->GetPetGearATK();
+            itembonuses.HitChance += pet->GetPetGearAccuracy();
+            itembonuses.AvoidMeleeChance += pet->GetPetGearAvoidance();
+
+            if (pet->GetPetGearHaste() > 0) {
+                itembonuses.haste += pet->GetPetGearHaste();
+            }
+
+            itembonuses.MR += pet->GetPetGearMR();
+            itembonuses.FR += pet->GetPetGearFR();
+            itembonuses.CR += pet->GetPetGearCR();
+            itembonuses.PR += pet->GetPetGearPR();
+            itembonuses.DR += pet->GetPetGearDR();
+            itembonuses.Corrup += pet->GetPetGearCorruption();
+        }
+    }
+
+    // This has to happen last, so we actually take the item bonuses into account.
+    Mob::CalcBonuses();
 }
 
 void Client::CalcBonuses()

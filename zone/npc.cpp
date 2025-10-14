@@ -597,6 +597,14 @@ bool NPC::Process()
 		return false;
 	}
 
+	// Check for pet gear rescan
+    if (IsPet() && RuleB(Pets, UsePetGearBag)) {
+        Pet* pet = CastToPet();
+        if (pet) {
+            pet->ProcessPetGearRescan();
+        }
+    }
+
 	if (IsStunned() && stunned_timer.Check()) {
 		Mob::UnStun();
 		spun_timer.Disable();

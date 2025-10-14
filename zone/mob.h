@@ -45,6 +45,7 @@ class Client;
 class EQApplicationPacket;
 class Group;
 class NPC;
+class Pet;
 class Raid;
 class Aura;
 struct AuraRecord;
@@ -321,7 +322,7 @@ public:
 	/**
 	 ************************************************
 	 * Appearance
-	 ************************************************	
+	 ************************************************
 	 */
 
 	EQ::InternalTextureProfile mob_texture_profile = {};
@@ -774,6 +775,7 @@ public:
 	Bot* GetHateTopBot() { return hate_list.GetMobWithMostHateOnList(this, nullptr, false, EntityFilterType::Bots)->CastToBot();}
 	Client* GetHateTopClient() { return hate_list.GetMobWithMostHateOnList(this, nullptr, false, EntityFilterType::Clients)->CastToClient();}
 	NPC* GetHateTopNPC() { return hate_list.GetMobWithMostHateOnList(this, nullptr, false, EntityFilterType::NPCs)->CastToNPC();}
+	inline class Pet* CastToPet() { return IsPet() ? reinterpret_cast<Pet*>(this) : nullptr; }
 	Mob* GetSecondaryHate(Mob *skip) { return hate_list.GetMobWithMostHateOnList(this, skip); }
 	Mob* GetHateDamageTop(Mob* other) { return hate_list.GetDamageTopOnHateList(other);}
 	Mob* GetHateRandom() { return hate_list.GetRandomMobOnHateList(); }

@@ -35,7 +35,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fastmath.h"
 #include "mob.h"
 #include "npc.h"
-
+#include "pets.h"
 #include "bot.h"
 
 extern QueryServ* QServ;
@@ -1812,7 +1812,6 @@ void Client::Damage(Mob* other, int64 damage, uint16 spell_id, EQ::skills::Skill
 
 	//do a majority of the work...
 	CommonDamage(other, damage, spell_id, attack_skill, avoidable, buffslot, iBuffTic, special);
-
 	if (damage > 0) {
 
 		if (!IsValidSpell(spell_id)) {
@@ -1912,7 +1911,6 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 
 	// Cache the current pet pointer before we do anything that might depop/disown it
 	Mob* m_pet = GetPet();
-<<<<<<< HEAD
 	if (RuleB(Pets, AutoSuspendOnDeath) && HasPet() && !GetPet()->IsCharmed()) {
 		// --- Calm pet so suspend will succeed ---
 		Mob* p = GetPet();
@@ -1928,7 +1926,7 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 			entity_list.RemoveFromHateLists(pet);     // preferred
 			// entity_list.RemoveFromTargets(pet, true); // fallback if above doesn't exist
 
-			// 3) Stop any AI “attack” behavior and park the pet
+			// 3) Stop any AI "attack" behavior and park the pet
 			pet->AI_Stop();
 			pet->SetTaunting(false);
 			pet->SetPetOrder(SPO_Guard);
@@ -1936,45 +1934,31 @@ bool Client::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::Skil
 			// (Optional) drop detrimental temp auras that keep combat ticking
 			// pet->BuffFadeDetrimental(); // only if your branch exposes it on NPC
 		}
-if (p && p->IsNPC()) {
-	NPC* pet = p->CastToNPC();
+		if (p && p->IsNPC()) {
+			NPC* pet = p->CastToNPC();
 
-	// Snapshot everything ourselves to guarantee buffs/items are captured
-	memset(&m_suspendedminion, 0, sizeof(PetInfo));
-	m_suspendedminion.SpellID  = pet->GetPetSpellID();
-	m_suspendedminion.HP       = pet->GetHP();
-	m_suspendedminion.Mana     = pet->GetMana();
-	m_suspendedminion.petpower = pet->GetPetPower();
-	m_suspendedminion.size     = pet->GetSize();
-	m_suspendedminion.taunting = pet->IsTaunting();
+			// Snapshot everything ourselves to guarantee buffs/items are captured
+			memset(&m_suspendedminion, 0, sizeof(PetInfo));
+			m_suspendedminion.SpellID  = pet->GetPetSpellID();
+			m_suspendedminion.HP       = pet->GetHP();
+			m_suspendedminion.Mana     = pet->GetMana();
+			m_suspendedminion.petpower = pet->GetPetPower();
+			m_suspendedminion.size     = pet->GetSize();
+			m_suspendedminion.taunting = pet->IsTaunting();
 
-    // This fills Buffs + Items
-    pet->GetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
-}
+			// This fills Buffs + Items
+			pet->GetPetState(m_suspendedminion.Buffs, m_suspendedminion.Items, m_suspendedminion.Name);
+		}
 
-// Now that the snapshot is definitely populated, suspend (despawn)
-SuspendMinion(true);
-		// Now that the pet is peaceful, snapshot+despawn
+		// Now that the snapshot is definitely populated, suspend (despawn)
 		SuspendMinion(true);
 		LogInfo("[AutoSuspend][Death] Suspended snapshot: SpellID={} HP={} Mana={} (rule={})",
-        static_cast<uint32>(m_suspendedminion.SpellID),
-        static_cast<int>(m_suspendedminion.HP),
-        static_cast<int>(m_suspendedminion.Mana),
-        RuleB(Pets, AutoSuspendOnDeath));
+			static_cast<uint32>(m_suspendedminion.SpellID),
+			static_cast<int>(m_suspendedminion.HP),
+			static_cast<int>(m_suspendedminion.Mana),
+			RuleB(Pets, AutoSuspendOnDeath));
 	}
 
-=======
-
-	// If enabled, auto-suspend a normal (non-charmed) pet BEFORE we disown
-	if (RuleB(Pets, AutoSuspendOnDeath) && m_pet && !m_pet->IsCharmed()) {
-		// true: include buffs/gear in the suspended snapshot
-		SuspendMinion(true);
-		// Note: SuspendMinion() persists the pet and depops it.
-		// The m_pet pointer may be stale after this call; do not use it except for the charmed check below.
-	}
-
-	// Original behavior: disown the pet handle on death (safe even if we just suspended)
->>>>>>> 96ee2f2f5b18639366432e715cd67b4260f445c4
 	SetPet(0);
 	SetHorseId(0);
 	ShieldAbilityClearVariables();
@@ -2321,10 +2305,38 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 
 	//figure out what weapon they are using, if any
 	const EQ::ItemData *weapon = nullptr;
-	if (Hand == EQ::invslot::slotPrimary && equipment[EQ::invslot::slotPrimary] > 0) {
-		weapon = database.GetItem(equipment[EQ::invslot::slotPrimary]);
-	} else if (equipment[EQ::invslot::slotSecondary]) {
-		weapon = database.GetItem(equipment[EQ::invslot::slotSecondary]);
+
+	// Check for pet virtual gear weapons FIRST
+	if (IsPet() && RuleB(Pets, UsePetGearBag)) {
+		Pet* pet = CastToPet();
+		if (pet && pet->HasPetGearEquipped()) {
+			if (Hand == EQ::invslot::slotPrimary) {
+				const auto* virt_weapon = pet->GetPetPrimaryWeapon();
+				if (virt_weapon && virt_weapon->item_id > 0) {
+					weapon = database.GetItem(virt_weapon->item_id);
+					if (weapon) {
+						LogCombat("Pet using virtual primary weapon: [{}] ([{}])", weapon->Name, weapon->ID);
+					}
+				}
+			} else if (Hand == EQ::invslot::slotSecondary) {
+				const auto* virt_weapon = pet->GetPetSecondaryWeapon();
+				if (virt_weapon && virt_weapon->item_id > 0) {
+					weapon = database.GetItem(virt_weapon->item_id);
+					if (weapon) {
+						LogCombat("Pet using virtual secondary weapon: [{}] ([{}])", weapon->Name, weapon->ID);
+					}
+				}
+			}
+		}
+	}
+
+	// If no virtual weapon found, use equipped weapon
+	if (!weapon) {
+		if (Hand == EQ::invslot::slotPrimary && equipment[EQ::invslot::slotPrimary] > 0) {
+			weapon = database.GetItem(equipment[EQ::invslot::slotPrimary]);
+		} else if (equipment[EQ::invslot::slotSecondary]) {
+			weapon = database.GetItem(equipment[EQ::invslot::slotSecondary]);
+		}
 	}
 
 	//We dont factor much from the weapon into the attack.
@@ -2433,8 +2445,34 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 		otherlevel = otherlevel ? otherlevel : 1;
 		mylevel = mylevel ? mylevel : 1;
 
-		my_hit.base_damage = GetBaseDamage() + eleBane;
-		my_hit.min_damage = GetMinDamage();
+		// Check if pet has virtual weapon with damage
+		bool using_virtual_weapon = false;
+		if (IsPet() && RuleB(Pets, UsePetGearBag)) {
+			Pet* pet = CastToPet();
+			if (pet && pet->HasPetGearEquipped()) {
+				const PetVirtualGear::WeaponData* virt_weapon = nullptr;
+
+				if (Hand == EQ::invslot::slotPrimary) {
+					virt_weapon = pet->GetPetPrimaryWeapon();
+				} else if (Hand == EQ::invslot::slotSecondary) {
+					virt_weapon = pet->GetPetSecondaryWeapon();
+				}
+
+				if (virt_weapon && virt_weapon->damage > 0) {
+					my_hit.base_damage = virt_weapon->damage + eleBane;
+					my_hit.min_damage = 0; // Pets don't get damage bonus from virtual weapons
+					using_virtual_weapon = true;
+					LogCombat("Pet using virtual weapon damage: [{}]", virt_weapon->damage);
+				}
+			}
+		}
+
+		// Only use NPC base damage if not using virtual weapon
+		if (!using_virtual_weapon) {
+			my_hit.base_damage = GetBaseDamage() + eleBane;
+			my_hit.min_damage = GetMinDamage();
+		}
+
 		int32 hate = my_hit.base_damage + my_hit.min_damage;
 
 		int hit_chance_bonus = 0;
@@ -2488,6 +2526,25 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 
 	bool has_hit = my_hit.damage_done > 0;
 	if (has_hit && !bRiposte && !other->HasDied()) {
+		// Try weapon procs from virtual gear
+if (IsPet() && RuleB(Pets, PetGearBagAllowProcs)) {
+    Pet* pet = CastToPet();
+    if (pet && pet->HasPetWeaponProcs()) {
+        const auto& proc_spells = pet->GetPetWeaponProcSpells();
+        const auto& proc_rates  = pet->GetPetWeaponProcRates();
+
+        for (size_t i = 0; i < proc_spells.size(); ++i) {
+            if (IsValidSpell(proc_spells[i])) {
+                // Use proc rate if available, otherwise default to ~3% (300 / 10000)
+                const int proc_chance = (i < proc_rates.size() && proc_rates[i] > 0) ? proc_rates[i] : 300;
+                if (zone->random.Int(0, 9999) < proc_chance) {
+                    LogCombat("Pet virtual weapon proc triggered: spell [{}]", proc_spells[i]);
+                    ExecWeaponProc(nullptr, proc_spells[i], other);
+                }
+            }
+        }
+    }
+}
 		TryWeaponProc(nullptr, weapon, other, Hand);
 
 		if (!other->HasDied()) {
@@ -6011,7 +6068,7 @@ void Mob::ApplyDamageTable(DamageHitInfo &hit)
 #endif
 
 	// someone may want to add this to custom servers, can remove this if that's the case
-	if (!IsClient()&& !IsBot()) {
+	if (!IsClient() && !IsBot()) {
 		return;
 	}
 

@@ -25,6 +25,7 @@
 #include "pets.h"
 #include "zonedb.h"
 #include "bot.h"
+#include <sstream>
 
 #ifndef WIN32
 #include <stdlib.h>
@@ -34,6 +35,113 @@
 // ------------------------------
 // helpers
 // ------------------------------
+
+
+#include <sstream> // add this include
+
+namespace {
+    // Map class id -> 3-letter key used in the CSV rule
+    inline const char* ClassAbbr(uint8 c)
+    {
+        switch (c) {
+            case Class::Magician:     return "MAG";
+            case Class::Necromancer:  return "NEC";
+            case Class::Beastlord:    return "BST";
+            case Class::Enchanter:    return "ENC";
+            case Class::ShadowKnight: return "SHD";
+            case Class::Shaman:       return "SHM";
+            case Class::Bard:         return "BRD";
+            default:                  return "";
+        }
+    }
+
+    // CSV format example:
+    // Pets:PetGearBagLoregroupsCSV = MAG:15071,NEC:15072,BST:15073,ENC:15074,SHD:15075,SHM:15076,BRD:15077;FALLBACK=15075;SCAN_BANK=1
+    //
+    // - Left side (before ';') is comma-separated class:loregroup pairs.
+    // - Right side (after ';') takes optional K=V;K=V items (FALLBACK, SCAN_BANK).
+    //
+    // Output:
+    //   out_loregroups         -> 1+ loregroups the current pet is allowed to use
+    //   out_scan_bank_override -> true if SCAN_BANK was specified
+    //   out_scan_bank_value    -> value of SCAN_BANK when override=true
+    static void ResolvePetLoregroups(uint8 summoner_class,
+                                     std::vector<int32>& out_loregroups,
+                                     bool& out_scan_bank_override,
+                                     bool& out_scan_bank_value)
+    {
+        out_loregroups.clear();
+        out_scan_bank_override = false;
+        out_scan_bank_value = false;
+
+        const int legacy = RuleI(Pets, PetGearBagLoregroup); // legacy single-loregroup fallback
+        const std::string csv = RuleS(Pets, PetGearBagLoregroupsCSV); // may be empty
+
+        int fallback_val = 0;
+        const std::string want = ClassAbbr(summoner_class);
+
+        if (!csv.empty()) {
+            // Split once on ';' -> left: pairs, right: K=V list (optional)
+            std::string left_pairs = csv;
+            std::string right_kv;
+            if (auto pos = csv.find(';'); pos != std::string::npos) {
+                left_pairs = csv.substr(0, pos);
+                right_kv   = csv.substr(pos + 1);
+            }
+
+            // Parse left side: "MAG:15071,NEC:15072,..."
+            {
+                std::stringstream ss(left_pairs);
+                std::string token;
+                while (std::getline(ss, token, ',')) {
+                    auto colon = token.find(':');
+                    if (colon == std::string::npos) continue;
+                    std::string key = token.substr(0, colon);
+					Strings::Trim(key);
+					Strings::ToUpper(key);
+                    std::string val = token.substr(colon + 1);
+					Strings::Trim(val);
+                    int32 lg = std::atoi(val.c_str());
+                    if (!want.empty() && key == want && lg > 0) {
+                        out_loregroups.push_back(lg);
+                    }
+                }
+            }
+
+            // Parse right side: "FALLBACK=15075;SCAN_BANK=1"
+            if (!right_kv.empty()) {
+                std::stringstream ss(right_kv);
+                std::string kv;
+                while (std::getline(ss, kv, ';')) {
+                    auto eq = kv.find('=');
+                    if (eq == std::string::npos) continue;
+                    std::string k = kv.substr(0, eq);
+					Strings::Trim(k);
+					Strings::ToUpper(k);
+                    std::string v = kv.substr(eq + 1);
+					Strings::Trim(v);
+                    if (k == "FALLBACK") {
+                        fallback_val = std::atoi(v.c_str());
+                    } else if (k == "SCAN_BANK") {
+                        out_scan_bank_override = true;
+                        std::string vl = Strings::ToLower(v);
+                        out_scan_bank_value = (vl == "1" || vl == "true" || vl == "yes");
+                    }
+                }
+            }
+        }
+
+        // If nothing specific resolved for this class, prefer CSV FALLBACK, else legacy int rule
+        if (out_loregroups.empty()) {
+            if (fallback_val > 0) {
+                out_loregroups.push_back(fallback_val);
+            } else if (legacy > 0) {
+                out_loregroups.push_back(legacy);
+            }
+        }
+    }
+} // anonymous namespace
+
 
 // need to pass in a char array of 64 chars
 void GetRandPetName(char *name)
@@ -260,6 +368,10 @@ void Mob::MakePoweredPet(uint16 spell_id, const char* pettype, int16 petpower,
 
     //this takes ownership of the npc_type data
     auto npc = new Pet(npc_type, this, record.petcontrol, spell_id, record.petpower);
+		npc->SetSummonerClass(
+  	  	IsClient() ? CastToClient()->GetClass() :
+    	IsBot()    ? CastToBot()->GetClass()    : 0
+);
 
     // Now that we have an actual object to interact with, load
     // the base items for the pet.
@@ -396,7 +508,12 @@ bool Pet::ComputePetBagSignature(uint64 &out_sig)
     if (!owner || !owner->IsClient()) return false;
 
     Client* cl = owner->CastToClient();
-    const int32 target_loregroup = RuleI(Pets, PetGearBagLoregroup);
+    // old method
+	// const int32 target_loregroup = RuleI(Pets, PetGearBagLoregroup);
+
+	//new petbagloregroup method
+	const int32 target_loregroup = ResolvePetBagLoregroup();
+
     if (target_loregroup <= 0) return false;
 
     auto sig_container = [&](int16 slot_id)
@@ -465,7 +582,7 @@ void Pet::ScanOwnerForPetGear()
 
     const bool virtual_on = RuleB(Pets, PetGearBagVirtualEquip);
     const bool scan_bank  = RuleB(Pets, PetGearBagScanBank);
-    const int  loregrp    = RuleI(Pets, PetGearBagLoregroup);
+    const int  loregrp    = ResolvePetBagLoregroup();
 
     cl->Message(Chat::Yellow, "[PetGear] scan begin (virtual=%s, bank=%s, loregroup=%d)",
                virtual_on ? "on" : "off", scan_bank ? "on" : "off", loregrp);
@@ -538,6 +655,72 @@ void Pet::ClearPetGearStats()
     // avoids churn by comparing to last pushed models.
     UpdatePetWeaponAppearance();
 }
+int32 Pet::ResolvePetBagLoregroup()
+{
+    // Fallback to old single-loregroup rule
+    int32 fallback = RuleI(Pets, PetGearBagLoregroup);
+
+    if (!RuleB(Pets, UseClassMappedPetBags))
+        return fallback;
+
+    const Mob* owner = GetOwner();
+    if (!owner)
+        return fallback;
+
+    // Map owner class -> short key used in CSV
+    const char* key = "";
+    switch (owner->GetClass()) {
+        case 13: key = "MAG"; break; // Magician
+        case 11: key = "NEC"; break; // Necromancer
+        case 15: key = "BST"; break; // Beastlord
+        case 14: key = "ENC"; break; // Enchanter
+        case 5:  key = "SHD"; break; // Shadow Knight
+        case 10: key = "SHM"; break; // Shaman
+        case 8:  key = "BRD"; break; // Bard
+        default: key = "";           break; // not mapped → fallback
+    }
+    if (!key[0])
+        return fallback;
+
+    std::unordered_map<std::string, int32> map;
+    std::string csv = RuleS(Pets, PetGearBagLoregroupsCSV);
+    if (csv.empty())
+        return fallback;
+
+    // Parse "KEY:NUMBER" pairs separated by commas
+    // Example: "MAG:15071,NEC:15072,BST:15073,..."
+    auto tokens = Strings::Split(csv, ',');
+    for (const auto& t : tokens)
+    {
+        std::string token = t;                 // make a copy
+        Strings::Trim(token);                  // in-place
+
+        if (token.empty())
+            continue;
+
+        size_t pos = token.find(':');
+        if (pos == std::string::npos)
+            continue;
+
+        std::string k = token.substr(0, pos);
+        Strings::Trim(k);
+        Strings::ToUpper(k);                   // in-place
+
+        std::string v = token.substr(pos + 1);
+        Strings::Trim(v);
+
+        if (!k.empty() && Strings::IsNumber(v)) {
+            map[k] = Strings::ToInt(v);
+        }
+    }
+
+    auto it = map.find(key);
+    if (it != map.end() && it->second > 0)
+        return it->second;
+
+    return fallback;
+}
+
 
 bool Pet::GetItemsFromPetGearBag(std::vector<const EQ::ItemData*>& items)
 {
@@ -545,8 +728,20 @@ bool Pet::GetItemsFromPetGearBag(std::vector<const EQ::ItemData*>& items)
     if (!owner || !owner->IsClient()) return false;
 
     Client* client_owner = owner->CastToClient();
-    const int32 target_loregroup = RuleI(Pets, PetGearBagLoregroup);
-    if (target_loregroup <= 0) return false;
+
+    // Resolve allowed loregroups for THIS pet based on the summoner class
+    std::vector<int32> allowed_loregroups;
+    bool scan_bank_override = false;
+    bool scan_bank_value = false;
+    ResolvePetLoregroups(GetSummonerClass(), allowed_loregroups, scan_bank_override, scan_bank_value);
+    if (allowed_loregroups.empty()) return false;
+
+    auto lore_ok = [&](int32 lg) -> bool {
+        for (auto x : allowed_loregroups) if (x == lg) return true;
+        return false;
+    };
+
+    const bool scan_bank = scan_bank_override ? scan_bank_value : RuleB(Pets, PetGearBagScanBank);
 
     auto scan_container = [&](int16 slot_id)
     {
@@ -555,57 +750,45 @@ bool Pet::GetItemsFromPetGearBag(std::vector<const EQ::ItemData*>& items)
 
         const EQ::ItemData* bag_item = inst->GetItem();
         if (!bag_item || bag_item->BagSlots <= 0) return;
-        if (bag_item->LoreGroup != target_loregroup) return;
+        if (!lore_ok(bag_item->LoreGroup)) return; // **class-specific bag filter**
 
-        // Breadcrumb: which bag was found
+        // Optional breadcrumb
         if (owner->IsClient()) {
             owner->CastToClient()->Message(Chat::Yellow,
-                "[PetGear] Found pet bag '%s' (id %u) at slot %d with %d slots",
-                bag_item->Name, bag_item->ID, slot_id, bag_item->BagSlots);
+                "[PetGear] Using bag '%s' (id %u) for class '%s'",
+                bag_item->Name, bag_item->ID, ClassAbbr(GetSummonerClass()));
         }
 
-        // Try BOTH addressing schemes so this works across branches.
+        // Iterate contents (support both addressing schemes)
         for (uint8 i = 0; i < bag_item->BagSlots; ++i) {
             const EQ::ItemInstance* sub_inst = inst->GetItem(i);
-            if (!sub_inst) {
-                // Some branches use 0..9 + SLOT_BEGIN offset
-                sub_inst = inst->GetItem(static_cast<int16>(EQ::invbag::SLOT_BEGIN + i));
-            }
+            if (!sub_inst) sub_inst = inst->GetItem(static_cast<int16>(EQ::invbag::SLOT_BEGIN + i));
             if (!sub_inst) continue;
-
-            // Skip nested containers regardless of enum availability
-            if (sub_inst->IsClassBag()) continue;
+            if (sub_inst->IsClassBag()) continue; // skip nested containers
 
             const EQ::ItemData* sub_item = sub_inst->GetItem();
             if (!sub_item) continue;
 
-            // Accept equippable/common items. Using literal 0 to be schema-safe.
-            if (sub_item->ItemClass == 0 /* EQ::item::ItemClassCommon */) {
+            // Only equippable/common items (ItemClass == 0 on EQEmu)
+            if (sub_item->ItemClass == 0) {
                 items.push_back(sub_item);
-
-                if (owner->IsClient()) {
-                    owner->CastToClient()->Message(Chat::Yellow,
-                        "[PetGear]  - [%u] %s (id %u, type %u, Slots=0x%X, DMG=%d, DLY=%d)",
-                        i, sub_item->Name, sub_item->ID, sub_item->ItemType,
-                        sub_item->Slots, sub_item->Damage, sub_item->Delay);
-                }
             }
         }
     };
 
-    // Inventory
-    for (int16 slot = EQ::invslot::GENERAL_BEGIN; slot <= EQ::invslot::GENERAL_END; ++slot) {
+    // General inventory
+    for (int16 slot = EQ::invslot::GENERAL_BEGIN; slot <= EQ::invslot::GENERAL_END; ++slot)
         scan_container(slot);
-    }
+
     // Bank (optional)
-    if (RuleB(Pets, PetGearBagScanBank)) {
-        for (int16 slot = EQ::invslot::BANK_BEGIN; slot <= EQ::invslot::BANK_END; ++slot) {
+    if (scan_bank) {
+        for (int16 slot = EQ::invslot::BANK_BEGIN; slot <= EQ::invslot::BANK_END; ++slot)
             scan_container(slot);
-        }
     }
 
     return !items.empty();
 }
+
 
 void Pet::ProcessItemForPetGear(const EQ::ItemData* item) {
     if (!item) return;

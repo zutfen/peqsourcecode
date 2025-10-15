@@ -130,6 +130,10 @@ public:
     void ClearPetGearStats();
     bool GetItemsFromPetGearBag(std::vector<const EQ::ItemData*>& items);
 
+	// Class tracking for pet bags
+	void SetSummonerClass(uint8 c) { m_summoner_class = c; }
+    uint8 GetSummonerClass() const { return m_summoner_class; }
+
     // Rescan controls
     void StartPetGearRescan(int seconds) {
         if (seconds <= 0) { m_virtual_gear.rescan_timer.Disable(); return; }
@@ -251,11 +255,17 @@ public:
         }
     }
 
+private:
+	uint8 m_summoner_class = 0;
+
 protected:
     // Virtual equipment & derived bonuses live here; mutate via helpers above
     PetVirtualGear m_virtual_gear;
 
-    // Helpers used by scan/apply paths
+	// Used to resolve pet bag lore groups for differing classes
+	int32 ResolvePetBagLoregroup();
+
+	// Helpers used by scan/apply paths
     void ProcessItemForPetGear(const EQ::ItemData* item);
     void AccumulateItemStats(const EQ::ItemData* item);
     void ProcessWeaponForPet(const EQ::ItemData* item, int virtual_slot);

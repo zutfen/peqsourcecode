@@ -308,6 +308,9 @@ RULE_BOOL(Pets, PetGearBagVirtualEquip, true, "Apply stats from pet gear")
 RULE_BOOL(Pets, PetGearBagAllowProcs, true, "Allow weapon procs from pet gear")
 RULE_REAL(Pets, PetGearBagVirtualDmgScale, 180.0, "Scalar for virtual weapon damage -> dmg bonus")
 RULE_REAL(Pets, PetGearBagVirtualOffhandScalar, 0.66, "Secondary weapon contribution multiplier")
+RULE_STRING(Pets, PetGearBagLoregroupsCSV, "", "CSV map of class->loregroup for pet gear bags, e.g. 'MAG:15071,NEC:15072;FALLBACK=15075;SCAN_BANK=1'")
+RULE_BOOL(Pets, UseClassMappedPetBags, true, "When true, use the above class map to resolve which loregroup to scan")
+
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(GM)

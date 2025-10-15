@@ -609,27 +609,54 @@ bool Pet::GetItemsFromPetGearBag(std::vector<const EQ::ItemData*>& items)
 
 void Pet::ProcessItemForPetGear(const EQ::ItemData* item) {
     if (!item) return;
+    using namespace EQ::invslot;
 
-    // Determine which slot this item should go in
+    // Helper: identify 2H weapon types
+    auto is_two_hand_type = [](uint8 t) -> bool {
+        // 1=2HS, 4=2HB, 35=2HP
+        return (t == 1 || t == 4 || t == 35);
+    };
+
+    // Current primary state (for blocking secondary when primary is 2H)
+    const bool primary_has_weapon = (m_virtual_gear.primary_weapon.item_id != 0);
+    const bool primary_is_twohand = primary_has_weapon && is_two_hand_type(m_virtual_gear.primary_weapon.skill);
+
+    // Initial slot decision
     int virtual_slot = DetermineVirtualSlot(item);
-    if (virtual_slot < 0) return; // Item doesn't fit in any equipment slot
 
-    // Check if slot is already occupied
-    if (m_virtual_gear.item_id[virtual_slot] != 0) {
-        // Slot already has an item, skip this one
+    // If DetermineVirtualSlot chose secondary while primary is a 2H, reject this item
+    if (virtual_slot == slotSecondary && primary_is_twohand) {
         return;
     }
 
-    // Assign item to virtual slot
+    // If DetermineVirtualSlot chose primary but it's already occupied,
+    // and the item can go secondary, and primary isn't a 2H, try secondary.
+    if (virtual_slot == slotPrimary &&
+        m_virtual_gear.item_id[slotPrimary] != 0)
+    {
+        const bool can_secondary = (item->Slots & (1u << slotSecondary)) != 0;
+        if (can_secondary && !primary_is_twohand &&
+            m_virtual_gear.item_id[slotSecondary] == 0)
+        {
+            virtual_slot = slotSecondary;
+        }
+    }
+
+    // If we still don't have a valid/free destination, bail
+    if (virtual_slot < 0) return;
+    if (m_virtual_gear.item_id[virtual_slot] != 0) return;
+
+    // Place it
     m_virtual_gear.item_id[virtual_slot] = item->ID;
 
-    // Accumulate stats from this item
+    // Accumulate stats
     AccumulateItemStats(item);
 
-    // Handle weapon-specific processing
-    if (virtual_slot == EQ::invslot::slotPrimary ||
-        virtual_slot == EQ::invslot::slotSecondary ||
-        virtual_slot == EQ::invslot::slotRange) {
+    // Weapon bookkeeping
+    if (virtual_slot == slotPrimary ||
+        virtual_slot == slotSecondary ||
+        virtual_slot == slotRange)
+    {
         ProcessWeaponForPet(item, virtual_slot);
     }
 }
@@ -660,46 +687,74 @@ void Pet::ApplyVirtualWeaponDamageBonus(int base_min, int base_max)
     min_dmg = std::max<int>(1, base_min + add_min);
     max_dmg = std::max<int>(min_dmg + 1, base_max + add_max);
 }
+static inline bool IsTwoHandType(uint8 item_type)
+{
+    // Detect if 2h weapon to prevent offhand weapon as well - EQEmu item->ItemType Mapping
+    // 1=2HS, 4=2HB, 35=2HP
+    return (item_type == 1 || item_type == 4 || item_type == 35);
+}
 
 int Pet::DetermineVirtualSlot(const EQ::ItemData* item)
 {
     if (!item) return -1;
     using namespace EQ::invslot;
 
-    const uint32 slots = item->Slots; // item wearable bitmask on your branch
+    const uint32 slots = item->Slots;
 
-    // Primary/Secondary (weapons)
-    if (slots & (1u << slotPrimary))   return slotPrimary;
-    if (slots & (1u << slotSecondary)) return slotSecondary;
+    const bool can_primary   = (slots & (1u << slotPrimary))   != 0;
+    const bool can_secondary = (slots & (1u << slotSecondary)) != 0;
+    const bool can_range     = (slots & (1u << slotRange))     != 0;
 
-    // Range (bows, idols, etc.)
-    if (slots & (1u << slotRange))     return slotRange;
+    // If primary is a two-hander, block any attempt to use secondary.
+    const bool primary_is_twohand =
+        (m_virtual_gear.primary_weapon.item_id != 0) &&
+        IsTwoHandType(m_virtual_gear.primary_weapon.skill);
+
+    // Weapons first: prefer Primary, then Secondary (if not blocked), then Range
+    if (can_primary || can_secondary || can_range) {
+        if (can_primary) {
+            if (m_virtual_gear.item_id[slotPrimary] == 0) {
+                return slotPrimary;
+            }
+        }
+        if (can_secondary) {
+            if (!primary_is_twohand && m_virtual_gear.item_id[slotSecondary] == 0) {
+                return slotSecondary;
+            }
+        }
+        if (can_range) {
+            if (m_virtual_gear.item_id[slotRange] == 0) {
+                return slotRange;
+            }
+        }
+        // Nothing free among weapon slots
+        return -1;
+    }
 
     // Singletons
-    if (slots & (1u << slotHead))      return slotHead;
-    if (slots & (1u << slotFace))      return slotFace;
-    if (slots & (1u << slotNeck))      return slotNeck;
-    if (slots & (1u << slotShoulders)) return slotShoulders;
-    if (slots & (1u << slotBack))      return slotBack;
-    if (slots & (1u << slotChest))     return slotChest;
-    if (slots & (1u << slotArms))      return slotArms;
-    if (slots & (1u << slotHands))     return slotHands;
-    if (slots & (1u << slotWaist))     return slotWaist;
-    if (slots & (1u << slotLegs))      return slotLegs;
-    if (slots & (1u << slotFeet))      return slotFeet;
+    if (slots & (1u << slotHead))      return (m_virtual_gear.item_id[slotHead]      == 0) ? slotHead      : -1;
+    if (slots & (1u << slotFace))      return (m_virtual_gear.item_id[slotFace]      == 0) ? slotFace      : -1;
+    if (slots & (1u << slotNeck))      return (m_virtual_gear.item_id[slotNeck]      == 0) ? slotNeck      : -1;
+    if (slots & (1u << slotShoulders)) return (m_virtual_gear.item_id[slotShoulders] == 0) ? slotShoulders : -1;
+    if (slots & (1u << slotBack))      return (m_virtual_gear.item_id[slotBack]      == 0) ? slotBack      : -1;
+    if (slots & (1u << slotChest))     return (m_virtual_gear.item_id[slotChest]     == 0) ? slotChest     : -1;
+    if (slots & (1u << slotArms))      return (m_virtual_gear.item_id[slotArms]      == 0) ? slotArms      : -1;
+    if (slots & (1u << slotHands))     return (m_virtual_gear.item_id[slotHands]     == 0) ? slotHands     : -1;
+    if (slots & (1u << slotWaist))     return (m_virtual_gear.item_id[slotWaist]     == 0) ? slotWaist     : -1;
+    if (slots & (1u << slotLegs))      return (m_virtual_gear.item_id[slotLegs]      == 0) ? slotLegs      : -1;
+    if (slots & (1u << slotFeet))      return (m_virtual_gear.item_id[slotFeet]      == 0) ? slotFeet      : -1;
 
-    // Pairs (pick-first-free)
+    // Pairs: pick-first-free
     if (slots & ((1u << slotEar1) | (1u << slotEar2))) {
-        return PickFirstFree(slotEar1, slotEar2);
+        return PickFirstFree(slotEar1,   slotEar2);
     }
     if (slots & ((1u << slotFinger1) | (1u << slotFinger2))) {
         return PickFirstFree(slotFinger1, slotFinger2);
     }
     if (slots & ((1u << slotWrist1) | (1u << slotWrist2))) {
-        return PickFirstFree(slotWrist1, slotWrist2);
+        return PickFirstFree(slotWrist1,  slotWrist2);
     }
 
-    // Not wearable by pets (or unknown)
     return -1;
 }
 

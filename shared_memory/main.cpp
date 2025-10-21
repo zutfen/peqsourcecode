@@ -146,35 +146,20 @@ int main(int argc, char **argv)
 	 */
 	{
     std::string tmp;
-    if (database.GetVariable("RuleSet", tmp)) {
-        // sanitize: trim whitespace and trailing commas
-        auto trim = [](std::string s) {
-            auto isspace_u = [](unsigned char c){ return std::isspace(c); };
-            while (!s.empty() && isspace_u(s.front())) s.erase(s.begin());
-            while (!s.empty() && (isspace_u(s.back()) || s.back()==',')) s.pop_back();
-            return s;
-        };
-        tmp = trim(tmp);
+		if (database.GetVariable("RuleSet", tmp)) {
+			LogInfo("Loading rule set [{}]", tmp.c_str());
+			if (!RuleManager::Instance()->LoadRules(&database, tmp.c_str(), false)) {
+				LogError("Failed to load ruleset [{}], falling back to defaults", tmp.c_str());
+			}
+		}
+		else {
+			if (!RuleManager::Instance()->LoadRules(&database, "default", false)) {
+				LogInfo("No rule set configured, using default rules");
+			}
+		}
 
-        // If it's purely digits, resolve to a ruleset name
-        bool digits = !tmp.empty() && std::all_of(tmp.begin(), tmp.end(), ::isdigit);
-        std::string use_name = tmp;
-
-        if (digits) {
-            // map id -> name from rule_sets
-            auto query = StringFormat("SELECT `name` FROM `rule_sets` WHERE `ruleset_id`=%s LIMIT 1", tmp.c_str());
-            auto res   = database.QueryDatabase(query);
-            if (res.Success() && res.RowCount() == 1) {
-                auto row = res.begin();
-                if (row[0] && *row[0]) {
-                    use_name = row[0];
-                } else {
-                    use_name = "default";
-                }
-            } else {
-                use_name = "default";
-            }
-        }
+		EQ::InitializeDynamicLookups();
+	}
 
         LogInfo("Loading rule set [{}] (resolved='{}')", tmp.c_str(), use_name.c_str());
         if (!RuleManager::Instance()->LoadRules(&database, use_name.c_str(), false)) {

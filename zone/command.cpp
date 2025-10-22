@@ -37,6 +37,7 @@ extern WorldServer worldserver;
 extern FastMath g_Math;
 void CatchSignal(int sig_num);
 
+void command_multiclass(Client* c, const Seperator* sep);
 
 int command_count; // how many commands we have
 
@@ -166,6 +167,7 @@ int command_init(void)
 		command_add("modifynpcstat", "[Stat] [Value] - Modifies an NPC's stats temporarily.", AccountStatus::GMLeadAdmin, command_modifynpcstat) ||
 		command_add("movechar", "[Character ID|Character Name] [Zone ID|Zone Short Name] - Move an offline character to the specified zone", AccountStatus::Guide, command_movechar) ||
 		command_add("movement", "Various movement commands", AccountStatus::GMMgmt, command_movement) ||
+		command_add("multiclass", "Add/remove an extra class for the current character.\nUsage: #multiclass add <class_id> | remove <class_id>", AccountStatus::Guide, command_multiclass) ||
 		command_add("myskills", "Show details about your current skill levels", AccountStatus::Player, command_myskills) ||
 		command_add("mysql", "[Help|Query] [SQL Query] - Mysql CLI, see 'Help' for options.", AccountStatus::GMImpossible, command_mysql) ||
 		command_add("mystats", "Show details about you or your pet", AccountStatus::Guide, command_mystats) ||

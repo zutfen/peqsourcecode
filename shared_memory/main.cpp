@@ -1,5 +1,5 @@
 /*	EQEMu: Everquest Server Emulator
-	Copyright (C) 2001-2013 EQEMu Development Team (http://eqemulator.net)
+	Copyright (C) 2001-2013 EQEmu Development Team (http://eqemulator.net)
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -36,11 +36,9 @@
 #include "../common/evolving_items.h"
 
 #ifdef _WINDOWS
-#include <direct.h>
+	#include <direct.h>
 #else
-
-#include <unistd.h>
-
+	#include <unistd.h>
 #endif
 
 #include <sys/stat.h>
@@ -51,22 +49,18 @@ inline bool MakeDirectory(const std::string &directory_name)
 	struct _stat st;
 	if (_stat(directory_name.c_str(), &st) == 0) {
 		return false;
-	}
-	else {
+	} else {
 		_mkdir(directory_name.c_str());
 		return true;
 	}
-
 #else
 	struct stat st;
 	if (stat(directory_name.c_str(), &st) == 0) {
 		return false;
-	}
-	else {
+	} else {
 		mkdir(directory_name.c_str(), 0755);
 		return true;
 	}
-
 #endif
 	return false;
 }
@@ -89,6 +83,7 @@ int main(int argc, char **argv)
 
 	SharedDatabase database;
 	SharedDatabase content_db;
+
 	LogInfo("Connecting to database");
 	if (!database.Connect(
 		Config->DatabaseHost.c_str(),
@@ -101,12 +96,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	/**
-	 * Multi-tenancy: Content database
-	 */
+	// Multi-tenancy: Content database
 	if (!Config->ContentDbHost.empty()) {
 		if (!content_db.Connect(
-			Config->ContentDbHost.c_str() ,
+			Config->ContentDbHost.c_str(),
 			Config->ContentDbUsername.c_str(),
 			Config->ContentDbPassword.c_str(),
 			Config->ContentDbName.c_str(),
@@ -131,7 +124,7 @@ int main(int argc, char **argv)
 
 	database.LoadVariables();
 
-	/* If we're running shared memory and hotfix has no custom name, we probably want to start from scratch... */
+	// If hotfix var holds default prefix, clear it (fresh run behavior)
 	std::string db_hotfix_name;
 	if (database.GetVariable("hotfix_name", db_hotfix_name)) {
 		if (!db_hotfix_name.empty() && strcasecmp("hotfix_", db_hotfix_name.c_str()) == 0) {
@@ -141,18 +134,16 @@ int main(int argc, char **argv)
 		}
 	}
 
-	/**
-	 * Rules: TODO: Remove later
-	 */
+	// -------- Rules load (cleaned) --------
 	{
-    std::string tmp;
-		if (database.GetVariable("RuleSet", tmp)) {
-			LogInfo("Loading rule set [{}]", tmp.c_str());
-			if (!RuleManager::Instance()->LoadRules(&database, tmp.c_str(), false)) {
-				LogError("Failed to load ruleset [{}], falling back to defaults", tmp.c_str());
+		std::string ruleset_name;
+		if (database.GetVariable("RuleSet", ruleset_name)) {
+			LogInfo("Loading rule set [{}]", ruleset_name.c_str());
+			if (!RuleManager::Instance()->LoadRules(&database, ruleset_name.c_str(), false)) {
+				LogError("Failed to load ruleset [{}], falling back to defaults", ruleset_name.c_str());
+				RuleManager::Instance()->LoadRules(&database, "default", false);
 			}
-		}
-		else {
+		} else {
 			if (!RuleManager::Instance()->LoadRules(&database, "default", false)) {
 				LogInfo("No rule set configured, using default rules");
 			}
@@ -160,20 +151,7 @@ int main(int argc, char **argv)
 
 		EQ::InitializeDynamicLookups();
 	}
-
-        LogInfo("Loading rule set [{}] (resolved='{}')", tmp.c_str(), use_name.c_str());
-        if (!RuleManager::Instance()->LoadRules(&database, use_name.c_str(), false)) {
-            LogError("Failed to load ruleset [{}], falling back to defaults", use_name.c_str());
-        }
-    } else {
-        if (!RuleManager::Instance()->LoadRules(&database, "default", false)) {
-            LogInfo("No rule set configured, using default rules");
-        }
-    }
-
-    EQ::InitializeDynamicLookups();
-}
-
+	// -------- end rules load --------
 
 	WorldContentService::Instance()->SetCurrentExpansion(RuleI(Expansion, CurrentExpansion));
 	WorldContentService::Instance()->SetDatabase(&database)
@@ -189,44 +167,44 @@ int main(int argc, char **argv)
 
 	std::string hotfix_name = "";
 
-	bool load_all        = true;
-	bool load_items      = false;
-	bool load_loot       = false;
-	bool load_spells     = false;
+	bool load_all   = true;
+	bool load_items = false;
+	bool load_spells = false;
 
 	if (argc > 1) {
 		for (int i = 1; i < argc; ++i) {
 			switch (argv[i][0]) {
-				case 'i':
-					if (strcasecmp("items", argv[i]) == 0) {
-						load_items = true;
-						load_all   = false;
-					}
-					break;
-
-				case 's':
-					if (strcasecmp("spells", argv[i]) == 0) {
-						load_spells = true;
-						load_all    = false;
-					}
-					break;
-				case '-': {
-					auto split = Strings::Split(argv[i], '=');
-					if (split.size() >= 2) {
-						auto command  = split[0];
-						auto argument = split[1];
-						if (strcasecmp("-hotfix", command.c_str()) == 0) {
-							hotfix_name = argument;
-							load_all    = true;
-						}
-					}
-					break;
+			case 'i':
+				if (strcasecmp("items", argv[i]) == 0) {
+					load_items = true;
+					load_all   = false;
 				}
+				break;
+
+			case 's':
+				if (strcasecmp("spells", argv[i]) == 0) {
+					load_spells = true;
+					load_all    = false;
+				}
+				break;
+
+			case '-': {
+				auto split = Strings::Split(argv[i], '=');
+				if (split.size() >= 2) {
+					auto command  = split[0];
+					auto argument = split[1];
+					if (strcasecmp("-hotfix", command.c_str()) == 0) {
+						hotfix_name = argument;
+						load_all    = true;
+					}
+				}
+				break;
+			}
 			}
 		}
 	}
 
-	if (hotfix_name.length() > 0) {
+	if (!hotfix_name.empty()) {
 		LogInfo("Writing data for hotfix [{}]", hotfix_name.c_str());
 	}
 

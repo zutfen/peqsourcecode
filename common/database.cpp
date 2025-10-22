@@ -522,7 +522,13 @@ bool Database::SaveCharacterCreate(uint32 character_id, uint32 account_id, Playe
 	c.guild_auto_consent      = pp->guildAutoconsent;
 	c.RestTimer               = pp->RestTimer;
 
-	CharacterDataRepository::ReplaceOne(*this, c);
+	// Non-destructive write
+	auto existing = CharacterDataRepository::FindOne(*this, c.id);
+	if (existing.id == 0) {
+		CharacterDataRepository::InsertOne(*this, c);
+	} else {
+		CharacterDataRepository::UpdateOne(*this, c);
+	}
 
 	std::vector<CharacterBindRepository::CharacterBind> character_binds;
 

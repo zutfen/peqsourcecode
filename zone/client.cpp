@@ -991,7 +991,167 @@ void Client::RemoveExpendedAA(int aa_id)
 		)
 	);
 }
+void Client::LoadMultiClassFromDB()
+{
+    std::array<uint8, 3> classes{{0,0,0}};
+    int i = 0;
 
+    auto res = database.QueryDatabase(fmt::format(
+        "SELECT class_id, is_primary "
+        "FROM character_classes "
+        "WHERE char_id = {} "
+        "ORDER BY is_primary DESC, class_id ASC",
+        CharacterID()));
+
+    if (res.Success() && res.RowCount() > 0) {
+        for (auto row = res.begin(); row != res.end() && i < 3; ++row) {
+            classes[i++] = static_cast<uint8>(atoi(row[0]));
+        }
+    }
+
+    if (i == 0) {
+        // No rows persisted: fall back to profile primary AND persist it for future sessions
+        const uint8 primary = GetClass();
+
+        // Persist a primary row so the DB is never empty for this char
+        auto ins = database.QueryDatabase(fmt::format(
+            "INSERT IGNORE INTO character_classes (char_id, class_id, is_primary) "
+            "VALUES ({}, {}, 1)",
+            CharacterID(), primary));
+
+        if (!ins.Success()) {
+            LogError("Failed to seed character_classes for {} ({}): {}", GetCleanName(), CharacterID(), ins.ErrorMessage().c_str());
+        } else {
+            LogInfo("Seeded primary class {} for {} ({}) into character_classes", primary, GetCleanName(), CharacterID());
+        }
+
+        classes[0] = primary;
+        i = 1;
+    }
+
+    m_classes = classes;
+
+    // Build mask
+    m_classes_mask = 0;
+    ForEachClass([&](uint8 c){
+        if (c >= 1 && c <= 16) { m_classes_mask |= (1u << (c - 1)); }
+    });
+}
+
+
+// -------- Multiclass: merged skill cap (max across classes) --------
+uint16 Client::MergedSkillCap(EQ::skills::SkillType skill_id, uint8 level) const
+{
+    uint16 best = 0;
+    ForEachClass([&](uint8 c){
+        if (!c) return;
+        const auto info = SkillCaps::Instance()->GetSkillCap(c, skill_id, level); // 'c' is uint8 class id
+        if (info.cap > best) { best = info.cap; }
+    });
+    return best;
+}
+
+// Thin wrapper for uint16-based callers
+uint16 Client::SkillCapForLevel(uint16 skill_id, uint8 level) const
+{
+    return MergedSkillCap(static_cast<EQ::skills::SkillType>(skill_id), level);
+}
+
+// Legacy per-class cap (used by lua/perl bindings, tradeskills, etc.)
+uint16 Client::MaxSkill(EQ::skills::SkillType skill_id, uint8 class_id, uint8 level) const
+{
+    // Preserve your historical RoF2 Berserker piercing quirk
+    if (ClientVersion() < EQ::versions::ClientVersion::RoF2 &&
+        class_id == Class::Berserker &&
+        skill_id == EQ::skills::Skill1HPiercing)
+    {
+        skill_id = EQ::skills::Skill2HPiercing;
+    }
+
+    // This fork uses the SkillCaps singleton (not database) for caps
+    return SkillCaps::Instance()->GetSkillCap(class_id, skill_id, level).cap;
+}
+bool Client::HasSecondaryClass(uint8 cls) const
+{
+    return std::find(m_multiclass_secondaries.begin(),
+                     m_multiclass_secondaries.end(),
+                     cls) != m_multiclass_secondaries.end();
+}
+
+void Client::SetSecondaryClassesFromList(const std::vector<int>& list)
+{
+    m_multiclass_secondaries.clear();
+    for (int c : list) {
+        if (c <= 0) continue;
+        if (static_cast<uint8>(c) == GetClass()) continue; // don't duplicate primary
+        m_multiclass_secondaries.push_back(static_cast<uint8>(c));
+    }
+    std::sort(m_multiclass_secondaries.begin(), m_multiclass_secondaries.end());
+    m_multiclass_secondaries.erase(
+        std::unique(m_multiclass_secondaries.begin(), m_multiclass_secondaries.end()),
+        m_multiclass_secondaries.end()
+    );
+}
+
+void Client::HydrateMulticlassFromDB()
+{
+    // Default: keep current class as primary unless DB says otherwise
+    int db_primary = static_cast<int>(GetClass());
+    std::vector<int> secondaries;
+
+    auto q = fmt::format(
+        "SELECT class_id, is_primary "
+        "FROM character_classes "
+        "WHERE char_id = {} "
+        "ORDER BY is_primary DESC, class_id",
+        CharacterID()
+    );
+
+    auto r = database.QueryDatabase(q);
+	if (!r.Success()) {
+		LogError("Multiclass load failed for CharID {}: {}", CharacterID(), r.ErrorMessage().c_str());
+		// Still ensure cache is empty to avoid stale state
+		m_multiclass_secondaries.clear();
+		return;
+	}
+
+
+    bool found_primary = false;
+    for (auto row : r) {
+        if (!row[0] || !row[1]) continue;
+        int cls = std::atoi(row[0]);
+        int isp = std::atoi(row[1]);
+        if (isp == 1) {
+            found_primary = true;
+            db_primary = cls;
+        } else {
+            secondaries.push_back(cls);
+        }
+    }
+
+    // Align active class with DB’s primary if different
+    if (found_primary && db_primary > 0 && db_primary != static_cast<int>(GetClass())) {
+        // Update the profile’s class field; keep any additional caches in sync if you have them
+        m_pp.class_ = static_cast<uint8>(db_primary);
+        // If there’s any class-derived state that must be recomputed, do it here.
+        // (Skills/spells recalcs typically happen elsewhere after connect.)
+    }
+
+    SetSecondaryClassesFromList(secondaries);
+
+    LogInfo("[Multiclass] Hydrated CharID={} Primary={} Secondaries=[{}]",
+        CharacterID(),
+        static_cast<int>(GetClass()),
+        [&](){
+            std::string s;
+            for (size_t i = 0; i < m_multiclass_secondaries.size(); ++i) {
+                s += std::to_string(static_cast<int>(m_multiclass_secondaries[i]));
+                if (i + 1 < m_multiclass_secondaries.size()) s += ",";
+            }
+            return s;
+        }()
+    );
+}
 bool Client::Save(uint8 iCommitNow) {
 	if(!ClientDataLoaded())
 		return false;
@@ -2104,14 +2264,20 @@ void Client::IncreaseLanguageSkill(uint8 language_id, uint8 increase)
 	MessageString(Chat::Skills, LANG_SKILL_IMPROVED);
 }
 
+// making this more explicit and compute efficient
 void Client::AddSkill(EQ::skills::SkillType skillid, uint16 value) {
-	if (skillid > EQ::skills::HIGHEST_SKILL)
-		return;
-	value = GetRawSkill(skillid) + value;
-	uint16 max = GetMaxSkillAfterSpecializationRules(skillid, MaxSkill(skillid));
-	if (value > max)
-		value = max;
-	SetSkill(skillid, value);
+    if (skillid > EQ::skills::HIGHEST_SKILL)
+        return;
+
+    value = GetRawSkill(skillid) + value;
+
+    const uint16 base_cap = MaxSkill(skillid); // merged cap via inline
+    const uint16 max      = GetMaxSkillAfterSpecializationRules(skillid, base_cap);
+
+    if (value > max)
+        value = max;
+
+    SetSkill(skillid, value);
 }
 
 void Client::SendSound(){//Makes a sound.
@@ -3059,97 +3225,95 @@ uint64 Client::GetAllMoney() {
 	);
 }
 
-bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who, int chancemodi) {
-	if (IsDead() || IsUnconscious()) {
-		return false;
-	}
+bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who, int chancemodi)
+{
+    if (IsDead() || IsUnconscious()) {
+        return false;
+    }
 
-	if (IsAIControlled()) { // no skillups while chamred =p
-		return false;
-	}
+    if (IsAIControlled()) { // no skillups while charmed
+        return false;
+    }
 
-	if (against_who && against_who->IsCorpse()) { // no skillups on corpses
-		return false;
-	}
+    if (against_who && against_who->IsCorpse()) { // no skillups on corpses
+        return false;
+    }
 
-	if (skillid > EQ::skills::HIGHEST_SKILL) {
-		return false;
-	}
+    if (skillid > EQ::skills::HIGHEST_SKILL) {
+        return false;
+    }
 
-	auto skillval = GetRawSkill(skillid);
-	auto maxskill = GetMaxSkillAfterSpecializationRules(skillid, MaxSkill(skillid));
+    // Current value
+    const uint16 skillval = GetRawSkill(skillid);
 
-	if (parse->PlayerHasQuestSub(EVENT_USE_SKILL)) {
-		const auto& export_string = fmt::format(
-			"{} {}",
-			skillid,
-			skillval
-		);
+    // Compute caps up front (merged base cap, then specialization rules)
+    const uint16 base_cap = MaxSkill(skillid); // <- inline in client.h now uses MergedSkillCap(...)
+    const uint16 maxskill = GetMaxSkillAfterSpecializationRules(skillid, base_cap);
 
-		parse->EventPlayer(EVENT_USE_SKILL, this, export_string, 0);
-	}
+    if (parse->PlayerHasQuestSub(EVENT_USE_SKILL)) {
+        const auto& export_string = fmt::format("{} {}", skillid, skillval);
+        parse->EventPlayer(EVENT_USE_SKILL, this, export_string, 0);
+    }
 
-	if (against_who) {
-		if (
-			against_who->GetSpecialAbility(SpecialAbility::AggroImmunity) ||
-			against_who->GetSpecialAbility(SpecialAbility::ClientAggroImmunity) ||
-			against_who->IsClient() ||
-			GetLevelCon(against_who->GetLevel()) == ConsiderColor::Gray
-		) {
-			return false;
-		}
-	}
+    if (against_who) {
+        if (against_who->GetSpecialAbility(SpecialAbility::AggroImmunity) ||
+            against_who->GetSpecialAbility(SpecialAbility::ClientAggroImmunity) ||
+            against_who->IsClient() ||
+            GetLevelCon(against_who->GetLevel()) == ConsiderColor::Gray)
+        {
+            return false;
+        }
+    }
 
-	// Make sure we're not already at skill cap
-	if (skillval < maxskill)
-	{
-		double Chance = 0;
-		if (RuleI(Character, SkillUpMaximumChancePercentage) + chancemodi - RuleI(Character, SkillUpMinimumChancePercentage) <= RuleI(Character, SkillUpMinimumChancePercentage)) {
-			Chance = RuleI(Character, SkillUpMinimumChancePercentage);
-		}
-		else {
-			// f(x) = (max - min + modification) * .99^skillval + min
-			// This results in a exponential decay where as you skill up, you lose a slight chance to skill up, ranging from your modified maximum to approaching your minimum
-			// This result is increased by the existing SkillUpModifier rule
-			double working_chance = (((RuleI(Character, SkillUpMaximumChancePercentage) - RuleI(Character, SkillUpMinimumChancePercentage) + chancemodi) * (pow(0.99, skillval))) + RuleI(Character, SkillUpMinimumChancePercentage));
-			Chance = (working_chance * RuleI(Character, SkillUpModifier) / 100);
-		}
+    // Make sure we're not already at skill cap
+    if (skillval < maxskill) {
+        double Chance = 0.0;
 
-		if(zone->random.Real(0, 99) < Chance)
-		{
-			SetSkill(skillid, GetRawSkill(skillid) + 1);
+        if (RuleI(Character, SkillUpMaximumChancePercentage) + chancemodi - RuleI(Character, SkillUpMinimumChancePercentage) <=
+            RuleI(Character, SkillUpMinimumChancePercentage))
+        {
+            Chance = RuleI(Character, SkillUpMinimumChancePercentage);
+        } else {
+            // f(x) = (max - min + modification) * .99^skillval + min
+            // Exponential decay: as skill rises, chance trends from modified max toward min
+            const double working_chance =
+                ((RuleI(Character, SkillUpMaximumChancePercentage) - RuleI(Character, SkillUpMinimumChancePercentage) + chancemodi) *
+                 std::pow(0.99, static_cast<double>(skillval))) +
+                RuleI(Character, SkillUpMinimumChancePercentage);
 
-			if (PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::SKILL_UP)) {
-				auto e = PlayerEvent::SkillUpEvent{
-					.skill_id = static_cast<uint32>(skillid),
-					.value = static_cast<int>((skillval + 1)),
-					.max_skill = static_cast<int16>(maxskill),
-					.against_who = (against_who) ? against_who->GetCleanName() : GetCleanName(),
-				};
-				RecordPlayerEventLog(PlayerEvent::SKILL_UP, e);
-			}
+            Chance = (working_chance * RuleI(Character, SkillUpModifier) / 100.0);
+        }
 
-			if (parse->PlayerHasQuestSub(EVENT_SKILL_UP)) {
-				const auto& export_string = fmt::format(
-					"{} {} {} {}",
-					skillid,
-					skillval + 1,
-					maxskill,
-					0
-				);
+        if (zone->random.Real(0, 99) < Chance) {
+            SetSkill(skillid, skillval + 1);
 
-				parse->EventPlayer(EVENT_SKILL_UP, this, export_string, 0);
-			}
+            if (PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::SKILL_UP)) {
+                auto e = PlayerEvent::SkillUpEvent{
+                    .skill_id   = static_cast<uint32>(skillid),
+                    .value      = static_cast<int>(skillval + 1),
+                    .max_skill  = static_cast<int16>(maxskill),
+                    .against_who= (against_who ? against_who->GetCleanName() : GetCleanName()),
+                };
+                RecordPlayerEventLog(PlayerEvent::SKILL_UP, e);
+            }
 
-			LogSkills("Skill [{}] at value [{}] successfully gain with [{}] chance (mod [{}])", skillid, skillval, Chance, chancemodi);
-			return true;
-		} else {
-			LogSkills("Skill [{}] at value [{}] failed to gain with [{}] chance (mod [{}])", skillid, skillval, Chance, chancemodi);
-		}
-	} else {
-		LogSkills("Skill [{}] at value [{}] cannot increase due to maxmum [{}]", skillid, skillval, maxskill);
-	}
-	return false;
+            if (parse->PlayerHasQuestSub(EVENT_SKILL_UP)) {
+                const auto& export_string = fmt::format("{} {} {} {}", skillid, skillval + 1, maxskill, 0);
+                parse->EventPlayer(EVENT_SKILL_UP, this, export_string, 0);
+            }
+
+            LogSkills("Skill [{}] at value [{}] successfully gain with [{}] chance (mod [{}])",
+                      skillid, skillval, Chance, chancemodi);
+            return true;
+        } else {
+            LogSkills("Skill [{}] at value [{}] failed to gain with [{}] chance (mod [{}])",
+                      skillid, skillval, Chance, chancemodi);
+        }
+    } else {
+        LogSkills("Skill [{}] at value [{}] cannot increase due to maximum [{}]", skillid, skillval, maxskill);
+    }
+
+    return false;
 }
 
 void Client::CheckLanguageSkillIncrease(uint8 language_id, uint8 teacher_skill) {
@@ -3199,28 +3363,31 @@ bool Client::HasSkill(EQ::skills::SkillType skill_id) const
 
 bool Client::CanHaveSkill(EQ::skills::SkillType skill_id) const
 {
-	if (
-		ClientVersion() < EQ::versions::ClientVersion::RoF2 &&
-		class_ == Class::Berserker &&
-		skill_id == EQ::skills::Skill1HPiercing
-	) {
-		skill_id = EQ::skills::Skill2HPiercing;
-	}
+    if (
+        ClientVersion() < EQ::versions::ClientVersion::RoF2 &&
+        class_ == Class::Berserker &&
+        skill_id == EQ::skills::Skill1HPiercing
+    ) {
+        skill_id = EQ::skills::Skill2HPiercing;
+    }
 
-	return SkillCaps::Instance()->GetSkillCap(GetClass(), skill_id, RuleI(Character, MaxLevel)).cap > 0;
+    // Use merged (max-of-three) cap at the server's max level
+    return MergedSkillCap(skill_id, static_cast<uint8>(RuleI(Character, MaxLevel))) > 0;
 }
 
-uint16 Client::MaxSkill(EQ::skills::SkillType skill_id, uint8 class_id, uint8 level) const
+void Client::MaxSkills()
 {
-	if (
-		ClientVersion() < EQ::versions::ClientVersion::RoF2 &&
-		class_id == Class::Berserker &&
-		skill_id == EQ::skills::Skill1HPiercing
-	) {
-		skill_id = EQ::skills::Skill2HPiercing;
-	}
+    for (const auto &s : EQ::skills::GetSkillTypeMap()) {
+        auto current_skill_value = (
+            EQ::skills::IsSpecializedSkill(s.first)
+                ? MAX_SPECIALIZED_SKILL
+                : MergedSkillCap(s.first, GetLevel())
+        );
 
-	return SkillCaps::Instance()->GetSkillCap(class_id, skill_id, level).cap;
+        if (GetSkill(s.first) < current_skill_value) {
+            SetSkill(s.first, current_skill_value);
+        }
+    }
 }
 
 uint8 Client::GetSkillTrainLevel(EQ::skills::SkillType skill_id, uint8 class_id)
@@ -12220,21 +12387,6 @@ std::string Client::GetGuildPublicNote()
 	return gci.public_note;
 }
 
-void Client::MaxSkills()
-{
-	for (const auto &s : EQ::skills::GetSkillTypeMap()) {
-		auto current_skill_value = (
-			EQ::skills::IsSpecializedSkill(s.first) ?
-			MAX_SPECIALIZED_SKILL :
-			SkillCaps::Instance()->GetSkillCap(GetClass(), s.first, GetLevel()).cap
-		);
-
-		if (GetSkill(s.first) < current_skill_value) {
-			SetSkill(s.first, current_skill_value);
-		}
-	}
-}
-
 void Client::SendPath(Mob* target)
 {
 	if (!target) {
@@ -12242,8 +12394,6 @@ void Client::SendPath(Mob* target)
 		QueuePacket(&outapp);
 		return;
 	}
-
-
 	if (
 		!RuleB(Pathing, Find) &&
 		RuleB(Bazaar, EnableWarpToTrader) &&

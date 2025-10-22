@@ -86,10 +86,13 @@ namespace EQ
 
 #include <float.h>
 #include <set>
+#include <vector>
 #include <algorithm>
 #include <memory>
 #include <deque>
 #include <ctime>
+#include <array>
+#include <cstdint>
 
 
 #define CLIENT_LD_TIMEOUT 30000 // length of time client stays in zone after LDing
@@ -450,6 +453,19 @@ public:
 	bool DoBarterSellerChecks(BuyerLineSellItem_Struct& sell_line);
 	void CancelBuyerTradeWindow();
 	void CancelTraderTradeWindow();
+
+	// Multiclass helpers (read-only from game code; mutate via GM/DB only)
+    const std::vector<uint8>& GetSecondaryClasses() const { return m_multiclass_secondaries; }
+    bool HasSecondaryClass(uint8 cls) const;
+    uint8 GetPrimaryClass() const { return GetClass(); }
+	void   LoadMultiClassFromDB();
+	// Login-time DB hydrate (read-only) — call once on connect
+    void HydrateMulticlassFromDB();
+	uint16 MergedSkillCap(EQ::skills::SkillType skill_id, uint8 level) const;
+	uint16 SkillCapForLevel(uint16 skill_id, uint8 level) const; // wrapper
+	uint32 GetClassesMask() const { return m_classes_mask; }
+	bool   HasClass(uint8 c) const { return (c>=1 && c<=16) ? ((m_classes_mask & (1u<<(c-1)))!=0) : false; }
+	template <typename F> void ForEachClass(F f) const { for (auto c : m_classes) if (c) f(c); }
 
 	void FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho);
 	bool ShouldISpawnFor(Client *c) { return !GMHideMe(c) && !IsHoveringForRespawn(); }
@@ -950,7 +966,7 @@ public:
 	void ShowSkillsWindow();
 
 	uint16 MaxSkill(EQ::skills::SkillType skill_id, uint8 class_id, uint8 level) const;
-	inline uint16 MaxSkill(EQ::skills::SkillType skill_id) const { return MaxSkill(skill_id, GetClass(), GetLevel()); }
+	inline uint16 MaxSkill(EQ::skills::SkillType skill_id) const { return MergedSkillCap(skill_id, GetLevel()); }
 	uint8 GetSkillTrainLevel(EQ::skills::SkillType skill_id, uint8 class_id);
 	void MaxSkills();
 
@@ -1956,6 +1972,8 @@ public:
 private:
 	ExternalHandinMoneyReturned m_external_handin_money_returned = {};
 	std::vector<uint32_t>       m_external_handin_items_returned = {};
+	std::vector<uint8> m_multiclass_secondaries; // non-primary classes for this session only
+    void SetSecondaryClassesFromList(const std::vector<int>& list);
 public:
 	ExternalHandinMoneyReturned GetExternalHandinMoneyReturned() { return m_external_handin_money_returned; }
 	std::vector<uint32_t> GetExternalHandinItemsReturned() { return m_external_handin_items_returned; }
@@ -1996,6 +2014,10 @@ protected:
 	char *adv_requested_data;
 	int adv_requested_member_count;
 	char *adv_data;
+
+	// Multiclass class helpers
+    std::array<uint8, 3> m_classes{{0,0,0}}; // primary first; 0 = empty slot
+    uint32               m_classes_mask = 0; // bitmask: bit (class-1)
 
 private:
 

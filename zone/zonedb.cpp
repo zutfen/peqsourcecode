@@ -1161,12 +1161,24 @@ bool ZoneDatabase::SaveCharacterData(
 	e.mailkey                 = c->GetMailKeyFull();
 	e.illusion_block          = c->GetIllusionBlock();
 
-	const int replaced = CharacterDataRepository::ReplaceOne(database, e);
+	// Prefer non-destructive save: update if exists, else insert
+	auto existing = CharacterDataRepository::FindOne(database, e.id);
+	int ok = 0;
 
-	if (!replaced) {
+	if (existing.id == 0) {
+		// InsertOne returns the entity (with id populated), not a row count
+		e = CharacterDataRepository::InsertOne(database, e);
+		ok = (e.id != 0); // success if we got an id
+	} else {
+		// UpdateOne returns number of rows affected
+		ok = CharacterDataRepository::UpdateOne(database, e);
+	}
+
+	if (!ok) {
 		LogError("Failed to save character data for [{}] ID [{}].", c->GetCleanName(), c->CharacterID());
 		return false;
 	}
+
 
 	LogDebug(
 		"ZoneDatabase::SaveCharacterData [{}], done Took [{}] seconds",

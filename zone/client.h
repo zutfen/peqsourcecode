@@ -1978,6 +1978,7 @@ public:
 	ExternalHandinMoneyReturned GetExternalHandinMoneyReturned() { return m_external_handin_money_returned; }
 	std::vector<uint32_t> GetExternalHandinItemsReturned() { return m_external_handin_items_returned; }
 
+	// Suspend Minion
 	bool HasSuspendedMinion() const;
     void UnsuspendMinion();
 

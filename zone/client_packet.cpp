@@ -964,6 +964,15 @@ void Client::CompleteConnect()
         GoToBind();
         return;
     }
+	// --- BEGIN: MulticlassInfo test ping ---
+	{
+		static const char kMciHello[] = "MCI hello";
+		auto p = new EQApplicationPacket(OP_MulticlassInfo, sizeof(kMciHello));
+		memcpy(p->pBuffer, kMciHello, sizeof(kMciHello));
+		this->FastQueuePacket(&p);
+	}
+	// --- END: MulticlassInfo test ping ---
+
 }
 
 void Client::Handle_Connect_OP_ApproveZone(const EQApplicationPacket *app)

@@ -27,6 +27,8 @@ void command_multiclass(Client *c, const Seperator *sep)
             return;
         }
         c->Message(Chat::White, "Added class %u", cls);
+        // Refresh runtime multiclass state now, will also emit hydration log
+        c->HydrateMulticlassFromDB();
     } else if (action == "remove") {
         auto r = database.QueryDatabase(fmt::format(
             "DELETE FROM character_classes WHERE char_id = {} AND class_id = {}", charid, cls));
@@ -35,6 +37,8 @@ void command_multiclass(Client *c, const Seperator *sep)
             return;
         }
         c->Message(Chat::White, "Removed class %u", cls);
+        // Refresh runtime multiclass state now, will also emit hydration log
+        c->HydrateMulticlassFromDB();
     } else {
         c->Message(Chat::White, "Unknown action '%s'", action.c_str());
     }

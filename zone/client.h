@@ -2456,6 +2456,7 @@ public:
 	const std::string &GetMailKey() const;
 	void ShowZoneShardMenu();
 	void Handle_OP_ChangePetName(const EQApplicationPacket *app);
+	void Handle_OP_MulticlassInfo(const EQApplicationPacket *app);
 	bool IsFilteredAFKPacket(const EQApplicationPacket *p);
 	void CheckAutoIdleAFK(PlayerPositionUpdateClient_Struct *p);
 	void SyncWorldPositionsToClient(bool ignore_idle = false);

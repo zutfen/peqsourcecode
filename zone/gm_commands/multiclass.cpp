@@ -155,6 +155,8 @@ void command_multiclass(Client *c, const Seperator *sep)
             return;
         }
         c->Message(Chat::White, "Removed all non-primary classes.");
+        // Refresh runtime state and emit hydration log
+        c->HydrateMulticlassFromDB();
         list_classes(c);
         return;
     }
@@ -200,6 +202,8 @@ void command_multiclass(Client *c, const Seperator *sep)
         if (!r.Success()) { c->Message(Chat::White, "DB error: %s", r.ErrorMessage().c_str()); return; }
 
         c->Message(Chat::White, "Added %s(%u).", class_short(cls), cls);
+        // Refresh runtime state and emit hydration log
+        c->HydrateMulticlassFromDB();
         list_classes(c);
         return;
     }
@@ -214,5 +218,7 @@ void command_multiclass(Client *c, const Seperator *sep)
     if (!r.Success()) { c->Message(Chat::White, "DB error: %s", r.ErrorMessage().c_str()); return; }
 
     c->Message(Chat::White, "Removed %s(%u).", class_short(cls), cls);
+    // Refresh runtime state and emit hydration log
+    c->HydrateMulticlassFromDB();
     list_classes(c);
 }

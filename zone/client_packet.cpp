@@ -74,6 +74,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "dialogue_window.h"
 #include "../common/rulesys.h"
 #include "../common/repositories/adventure_members_repository.h"
+#include "op_multiclass_info.h"
+#include "../common/classes.h"
 
 extern QueryServ* QServ;
 extern Zone* zone;
@@ -135,6 +137,8 @@ void MapOpcodes()
 	ConnectedOpcodes[OP_AltCurrencyReclaim] = &Client::Handle_OP_AltCurrencyReclaim;
 	ConnectedOpcodes[OP_AltCurrencySell] = &Client::Handle_OP_AltCurrencySell;
 	ConnectedOpcodes[OP_AltCurrencySellSelection] = &Client::Handle_OP_AltCurrencySellSelection;
+	// Multiclass client extension opcode
+	ConnectedOpcodes[OP_MulticlassInfo] = &Client::Handle_OP_MulticlassInfo;
 	ConnectedOpcodes[OP_Animation] = &Client::Handle_OP_Animation;
 	ConnectedOpcodes[OP_ApplyPoison] = &Client::Handle_OP_ApplyPoison;
 	ConnectedOpcodes[OP_Assist] = &Client::Handle_OP_Assist;
@@ -1101,6 +1105,122 @@ void Client::Handle_Connect_OP_SendAATable(const EQApplicationPacket *app)
 {
 	SendAlternateAdvancementTable();
 	return;
+}
+
+// Stub handler for Multiclass client extension packets. The injected client
+// can send a THJ::MulticlassInfo payload with variable-length sections.
+// For now, we just sanity-check and log the header counts for verification.
+void Client::Handle_OP_MulticlassInfo(const EQApplicationPacket *app)
+{
+    if (!app) {
+        return;
+    }
+
+    if (app->size < sizeof(THJ::MulticlassInfo)) {
+        LogError("OP_MulticlassInfo: packet too small. Expected >= [{}], got [{}]",
+                 sizeof(THJ::MulticlassInfo), app->size);
+        return;
+    }
+
+    const auto *hdr = reinterpret_cast<const THJ::MulticlassInfo*>(app->pBuffer);
+    LogInfo("OP_MulticlassInfo: char_id={}, classes={}, aa={}, spells={}, skills={}, discs={}, abilities={}, bytes={}",
+            hdr->char_id,
+            hdr->class_count,
+            hdr->aa_count,
+            hdr->spell_count,
+            hdr->skill_count,
+            hdr->disc_count,
+            hdr->ability_count,
+            app->size);
+
+    // Minimal decode: consume class list and hydrate current session + persist mask.
+    const uint8_t* cursor = reinterpret_cast<const uint8_t*>(hdr) + sizeof(THJ::MulticlassInfo);
+    const uint8_t* end    = reinterpret_cast<const uint8_t*>(app->pBuffer) + app->size;
+
+    const size_t need_class_bytes = static_cast<size_t>(hdr->class_count) * sizeof(THJ::McClass);
+    if (cursor + need_class_bytes > end) {
+        LogError("OP_MulticlassInfo: truncated class array: need {} bytes, have {}", need_class_bytes, static_cast<size_t>(end - cursor));
+        return;
+    }
+
+    std::vector<int> all_classes;
+    all_classes.reserve(hdr->class_count);
+
+    // Build server-side class bitmask and secondary list
+    uint32_t class_mask = 0;
+    for (uint16_t i = 0; i < hdr->class_count; ++i) {
+        const auto* cc = reinterpret_cast<const THJ::McClass*>(cursor + i * sizeof(THJ::McClass));
+        const uint8_t cid = cc->class_id;
+        if (!IsPlayerClass(cid)) { continue; }
+        all_classes.push_back(static_cast<int>(cid));
+        class_mask |= GetPlayerClassBit(cid);
+    }
+
+    // Advance cursor beyond class array (we ignore further sections for now)
+    cursor += need_class_bytes;
+
+    if (class_mask == 0 && IsPlayerClass(GetClass())) {
+        class_mask = GetPlayerClassBit(GetClass());
+    }
+
+    // Persist immediately so it survives disconnect
+    // 1) Data bucket for external tooling compatibility
+    SetBucket("GestaltClasses", std::to_string(class_mask));
+
+    // 2) Canonical table used by this branch: character_classes
+    {
+        std::vector<int> persist_classes = all_classes;
+        // Ensure server primary is present at least as primary
+        const int primary_class = static_cast<int>(GetClass());
+        if (std::find(persist_classes.begin(), persist_classes.end(), primary_class) == persist_classes.end()) {
+            persist_classes.push_back(primary_class);
+        }
+
+        // Build comma-separated list for deletion step
+        std::string in_list;
+        for (size_t i = 0; i < persist_classes.size(); ++i) {
+            if (i) in_list += ",";
+            in_list += std::to_string(persist_classes[i]);
+        }
+
+        // Upsert each row with proper primary flag
+        for (int cls : persist_classes) {
+            int isp = (cls == primary_class) ? 1 : 0;
+            auto q = fmt::format(
+                "INSERT INTO character_classes (char_id, class_id, is_primary) "
+                "VALUES ({}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)",
+                CharacterID(), cls, isp);
+            auto r = database.QueryDatabase(q);
+            if (!r.Success()) {
+                LogError("[Multiclass] Persist upsert failed for CharID {} class {}: {}", CharacterID(), cls, r.ErrorMessage().c_str());
+            }
+        }
+
+        // Remove any stale rows not in the current set
+        if (!persist_classes.empty()) {
+            auto dq = fmt::format(
+                "DELETE FROM character_classes WHERE char_id = {} AND class_id NOT IN ({})",
+                CharacterID(), in_list);
+            auto dr = database.QueryDatabase(dq);
+            if (!dr.Success()) {
+                LogError("[Multiclass] Prune failed for CharID {}: {}", CharacterID(), dr.ErrorMessage().c_str());
+            }
+        }
+    }
+
+    // Hydrate in-memory secondaries right away (exclude primary)
+    std::vector<int> secondaries;
+    secondaries.reserve(all_classes.size());
+    for (int c : all_classes) {
+        if (static_cast<uint8_t>(c) != GetClass()) {
+            secondaries.push_back(c);
+        }
+    }
+    SetSecondaryClassesFromList(secondaries);
+
+    LogInfo("Multiclass updated: mask=0x{:04x}, primary={}, secondaries={}",
+            class_mask, GetClass(), secondaries.size());
 }
 
 void Client::Handle_Connect_OP_SendExpZonein(const EQApplicationPacket *app)

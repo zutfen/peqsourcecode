@@ -547,6 +547,8 @@ void Client::CompleteConnect()
 	LoadZoneFlags();
 	LoadAccountFlags();
 	LoadMultiClassFromDB();
+	// Publish the multiclass bitmask in the outbound player profile so the client hook can read it.
+	m_pp.char_id = GetClassesMask();
 
 	// Hydrate multiclass state early so class-dependent logic sees the correct primary/secondaries
 	HydrateMulticlassFromDB();

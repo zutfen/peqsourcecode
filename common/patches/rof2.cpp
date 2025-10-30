@@ -34,6 +34,7 @@
 #include "../rulesys.h"
 #include "../path_manager.h"
 #include "../classes.h"
+#include "../thj_multiclass.h"
 #include "../races.h"
 #include "../raid.h"
 
@@ -3095,6 +3096,15 @@ namespace RoF2
 		}
 
 		outapp->WriteUInt32(emu->char_id);		// character_id
+
+		// THJ: publish gestalt bitmask at offset 0x4C70 for the client hook.
+		uint32_t mask = THJ::GetMulticlassMask(emu->char_id);
+		if (mask == 0 && emu->class_ >= 1 && emu->class_ <= 16) {
+			mask = (1u << (emu->class_ - 1));
+		}
+		if (PacketSize > 0x4C74) {
+			*reinterpret_cast<uint32_t*>(outapp->pBuffer + 0x4C70) = mask;
+		}
 
 		outapp->WriteUInt8(emu->leadAAActive);
 

@@ -4,12 +4,34 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <string>
 
 // ---------- Class shortname <-> id mapping ----------
 static const char* kClassShort[17] = {
     "", "WAR","CLR","PAL","RNG","SHD","DRU","MNK","BRD","ROG","SHM","NEC","WIZ","MAG","ENC","BST","BER"
 };
+
+static int ci_compare(const char* lhs, const char* rhs)
+{
+    if (lhs == rhs)
+        return 0;
+    if (!lhs)
+        return -1;
+    if (!rhs)
+        return 1;
+
+    while (*lhs && *rhs) {
+        unsigned char a = static_cast<unsigned char>(*lhs++);
+        unsigned char b = static_cast<unsigned char>(*rhs++);
+        int diff = std::tolower(a) - std::tolower(b);
+        if (diff != 0)
+            return diff;
+    }
+    if (*lhs == *rhs)
+        return 0;
+    return *lhs ? 1 : -1;
+}
 
 static std::string strtoupper(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::toupper(c); });
@@ -136,15 +158,15 @@ void command_multiclass(Client *c, const Seperator *sep)
     const char* t2 = sep->arg[2];
 
     // list
-    if (t1 && _stricmp(t1, "list") == 0) {
+    if (t1 && ci_compare(t1, "list") == 0) {
         list_classes(c);
         return;
     }
 
     // removeall (confirmation required) — remove only non-primary rows
-    if (t1 && _stricmp(t1, "removeall") == 0) {
+    if (t1 && ci_compare(t1, "removeall") == 0) {
         std::string expected = fmt::format("CONFIRM:{}", charid);
-        if (!t2 || _stricmp(t2, expected.c_str()) != 0) {
+        if (!t2 || ci_compare(t2, expected.c_str()) != 0) {
             c->Message(Chat::White, "Refusing to remove all. Confirm with: #multiclass removeall %s", expected.c_str());
             return;
         }
@@ -166,10 +188,10 @@ void command_multiclass(Client *c, const Seperator *sep)
     uint8 cls = 0;
 
     if (t1 && *t1) {
-        if (_stricmp(t1, "add") == 0) {
+        if (ci_compare(t1, "add") == 0) {
             action = "add";
             if (!lookup_class_token(t2, cls)) { print_usage(c); return; }
-        } else if (_stricmp(t1, "remove") == 0) {
+        } else if (ci_compare(t1, "remove") == 0) {
             action = "remove";
             if (!lookup_class_token(t2, cls)) { print_usage(c); return; }
         } else {

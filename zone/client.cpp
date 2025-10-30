@@ -1006,7 +1006,9 @@ void Client::LoadMultiClassFromDB()
 
     if (res.Success() && res.RowCount() > 0) {
         for (auto row = res.begin(); row != res.end() && i < 3; ++row) {
-            classes[i++] = static_cast<uint8>(atoi(row[0]));
+            uint8 cid = static_cast<uint8>(atoi(row[0]));
+            if (cid < 1 || cid > 16) { continue; }
+            classes[i++] = cid;
         }
     }
 
@@ -1126,6 +1128,7 @@ void Client::HydrateMulticlassFromDB()
     for (auto row : r) {
         if (!row[0] || !row[1]) continue;
         int cls = std::atoi(row[0]);
+        if (cls < 1 || cls > 16) { continue; }
         int isp = std::atoi(row[1]);
         if (isp == 1) {
             found_primary = true;

@@ -78,8 +78,9 @@ static bool class_exists(uint32 charid, uint8 cls) {
 }
 
 static int count_rows_without_implied(uint32 charid) {
+    // Count only valid player classes (1..16)
     auto r = database.QueryDatabase(fmt::format(
-        "SELECT COUNT(*) FROM character_classes WHERE char_id = {}",
+        "SELECT COUNT(*) FROM character_classes WHERE char_id = {} AND class_id BETWEEN 1 AND 16",
         charid));
     if (!r.Success() || r.RowCount() == 0) return 0;
     return atoi(r.begin()[0]);
@@ -103,7 +104,8 @@ static void list_classes(Client* c) {
     // Pull rows
     auto r = database.QueryDatabase(fmt::format(
         "SELECT class_id, is_primary FROM character_classes "
-        "WHERE char_id = {} ORDER BY is_primary DESC, class_id ASC", charid));
+        "WHERE char_id = {} AND class_id BETWEEN 1 AND 16 "
+        "ORDER BY is_primary DESC, class_id ASC", charid));
 
     if (!r.Success()) {
         c->Message(Chat::White, "DB error listing classes: %s", r.ErrorMessage().c_str());
@@ -123,6 +125,7 @@ static void list_classes(Client* c) {
 
     for (auto row = r.begin(); row != r.end(); ++row) {
         uint8 cls = static_cast<uint8>(atoi(row[0]));
+        if (cls < 1 || cls > 16) { continue; }
         bool primary = atoi(row[1]) != 0;
         if (!first) line += ", ";
         line += class_short(cls);

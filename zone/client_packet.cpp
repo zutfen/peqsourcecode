@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "../common/opcodemgr.h"
 #include "../common/raid.h"
 
+#include "../common/thj_multiclass.h"
 #include <iomanip>
 #include <iostream>
 #include <math.h>
@@ -547,8 +548,6 @@ void Client::CompleteConnect()
 	LoadZoneFlags();
 	LoadAccountFlags();
 	LoadMultiClassFromDB();
-	// Publish the multiclass bitmask in the outbound player profile so the client hook can read it.
-	m_pp.char_id = GetClassesMask();
 
 	// Hydrate multiclass state early so class-dependent logic sees the correct primary/secondaries
 	HydrateMulticlassFromDB();
@@ -1223,6 +1222,9 @@ void Client::Handle_OP_MulticlassInfo(const EQApplicationPacket *app)
 
     LogInfo("Multiclass updated: mask=0x{:04x}, primary={}, secondaries={}",
             class_mask, GetClass(), secondaries.size());
+
+    THJ::SetMulticlassMask(CharacterID(), class_mask);
+    LogInfo("[THJ] MulticlassInfo applied mask=0x{:08X}", class_mask);
 }
 
 void Client::Handle_Connect_OP_SendExpZonein(const EQApplicationPacket *app)

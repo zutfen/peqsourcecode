@@ -37,6 +37,7 @@ extern volatile bool RunLoops;
 #include "../common/spdat.h"
 #include "../common/guilds.h"
 #include "../common/rulesys.h"
+#include "../common/thj_multiclass.h"
 #include "../common/strings.h"
 #include "../common/data_verification.h"
 #include "../common/profanity_manager.h"
@@ -1036,6 +1037,11 @@ void Client::LoadMultiClassFromDB()
     ForEachClass([&](uint8 c){
         if (c >= 1 && c <= 16) { m_classes_mask |= (1u << (c - 1)); }
     });
+
+    LogInfo("[THJ] LoadMultiClassFromDB classes=({},{},{}) mask=0x{:08X}",
+            m_classes[0], m_classes[1], m_classes[2], m_classes_mask);
+
+    THJ::SetMulticlassMask(CharacterID(), m_classes_mask);
 }
 
 

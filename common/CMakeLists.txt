@@ -92,6 +92,7 @@ SET(common_sources
     spdat.cpp
     spdat_bot.cpp
     strings.cpp
+    thj_multiclass.cpp
     struct_strategy.cpp
     textures.cpp
     timer.cpp

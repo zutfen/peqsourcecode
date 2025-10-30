@@ -68,6 +68,23 @@ void SendMulticlassInfo(Client* c) {
     MulticlassInfo hdr{};
     hdr.char_id = c->CharacterID();
 
+    uint32 class_mask = 0;
+    for (auto& mc : classes) {
+        if (mc.class_id >= 1 && mc.class_id <= 16) {
+            class_mask |= (1u << (mc.class_id - 1));
+        }
+    }
+    LogInfo("[THJ] SendMulticlassInfo mask=0x{:08X} classes={} aas={} spells={} skills={} discs={} abilities={}",
+            class_mask,
+            classes.size(),
+            aas.size(),
+            spells.size(),
+            skills.size(),
+            discs.size(),
+            abilities.size());
+
+    THJ::SetMulticlassMask(c->CharacterID(), class_mask);
+
     auto bytes = Serialize(hdr, classes, aas, spells, skills, discs, abilities);
 
     // Queue as a single packet:

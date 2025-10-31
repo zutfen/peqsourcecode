@@ -1109,38 +1109,26 @@ void Client::PersistMultiClassToDB()
     if (persist.empty())
         return;
 
-    if (persist.size() > 3)
+    if (persist.size() > 3) {
         persist.resize(3);
-
-    std::string in_list;
-    in_list.reserve(persist.size() * 3);
-    for (size_t i = 0; i < persist.size(); ++i) {
-        if (i)
-            in_list += ",";
-        in_list += std::to_string(persist[i]);
-
-        int is_primary = (persist[i] == static_cast<int>(GetClass())) ? 1 : 0;
-        auto q = fmt::format(
-            "INSERT INTO character_classes (char_id, class_id, is_primary) "
-            "VALUES ({}, {}, {}) "
-            "ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)",
-            CharacterID(), persist[i], is_primary);
-        auto r = database.QueryDatabase(q);
-        if (!r.Success()) {
-            LogError("[Multiclass] Persist upsert failed for CharID {} class {}: {}",
-                CharacterID(), persist[i], r.ErrorMessage().c_str());
-        }
     }
 
-    if (!in_list.empty()) {
-        auto dq = fmt::format(
-            "DELETE FROM character_classes "
-            "WHERE char_id = {} AND class_id BETWEEN 1 AND 16 AND class_id NOT IN ({})",
-            CharacterID(), in_list);
-        auto dr = database.QueryDatabase(dq);
-        if (!dr.Success()) {
-            LogError("[Multiclass] Persist prune failed for CharID {}: {}",
-                CharacterID(), dr.ErrorMessage().c_str());
+    auto prune = database.QueryDatabase(fmt::format(
+        "DELETE FROM character_classes WHERE char_id = {}", CharacterID()));
+    if (!prune.Success()) {
+        LogError("[Multiclass] Persist prune failed for CharID {}: {}",
+            CharacterID(), prune.ErrorMessage().c_str());
+    }
+
+    for (int cls : persist) {
+        int is_primary = (cls == static_cast<int>(GetClass())) ? 1 : 0;
+        auto ins = database.QueryDatabase(fmt::format(
+            "INSERT INTO character_classes (char_id, class_id, is_primary) "
+            "VALUES ({}, {}, {})",
+            CharacterID(), cls, is_primary));
+        if (!ins.Success()) {
+            LogError("[Multiclass] Persist insert failed for CharID {} class {}: {}",
+                CharacterID(), cls, ins.ErrorMessage().c_str());
         }
     }
 
@@ -1156,9 +1144,9 @@ void Client::PersistMultiClassToDB()
     m_classes = synced;
     m_classes_mask = mask;
     std::vector<int> secondaries;
-    for (size_t i = 0; i < persist.size(); ++i) {
-        if (persist[i] != static_cast<int>(GetClass())) {
-            secondaries.push_back(persist[i]);
+    for (int cls : persist) {
+        if (cls != static_cast<int>(GetClass())) {
+            secondaries.push_back(cls);
         }
     }
     SetSecondaryClassesFromList(secondaries);

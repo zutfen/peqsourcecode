@@ -2468,12 +2468,10 @@ int Perl_Client_GetSpellDamage(Client* self)
 void Perl_Client_TaskSelector(Client* self, perl::array task_ids)
 {
 	std::vector<int> tasks;
-    for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
-    {
-        // Disambiguate perl array indexing on MSVC by explicitly invoking
-        // the class operator[] and converting to int.
-        tasks.push_back(static_cast<int>(task_ids.operator[]((size_t)i)));
-    }
+	for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
+	{
+		tasks.push_back(task_ids[i]);
+	}
 
 	self->TaskQuestSetSelector(self, tasks, false);
 }
@@ -2481,10 +2479,10 @@ void Perl_Client_TaskSelector(Client* self, perl::array task_ids)
 void Perl_Client_TaskSelectorNoCooldown(Client* self, perl::array task_ids)
 {
 	std::vector<int> tasks;
-    for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
-    {
-        tasks.push_back(static_cast<int>(task_ids.operator[]((size_t)i)));
-    }
+	for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
+	{
+		tasks.push_back(task_ids[i]);
+	}
 
 	self->TaskQuestSetSelector(self, tasks, true);
 }

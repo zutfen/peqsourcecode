@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <algorithm>
+#include <vector>
 
 // for windows compile
 #ifndef _WINDOWS
@@ -994,7 +995,10 @@ void Client::RemoveExpendedAA(int aa_id)
 }
 void Client::LoadMultiClassFromDB()
 {
+    const uint8 profile_primary = m_pp.class_ ? m_pp.class_ : GetClass();
     std::array<uint8, 3> classes{{0,0,0}};
+    std::vector<uint8> all_classes;
+    all_classes.reserve(8);
     int i = 0;
 
     auto res = database.QueryDatabase(fmt::format(
@@ -1005,16 +1009,24 @@ void Client::LoadMultiClassFromDB()
         CharacterID()));
 
     if (res.Success() && res.RowCount() > 0) {
-        for (auto row = res.begin(); row != res.end() && i < 3; ++row) {
-            uint8 cid = static_cast<uint8>(atoi(row[0]));
-            if (cid < 1 || cid > 16) { continue; }
-            classes[i++] = cid;
+        for (auto row = res.begin(); row != res.end(); ++row) {
+            if (!row[0])
+                continue;
+            uint8 cls = static_cast<uint8>(atoi(row[0]));
+            if (cls == 0 || cls > 24)
+                continue;
+            if (std::find(all_classes.begin(), all_classes.end(), cls) == all_classes.end()) {
+                all_classes.push_back(cls);
+                if (i < static_cast<int>(classes.size())) {
+                    classes[i++] = cls;
+                }
+            }
         }
     }
 
     if (i == 0) {
         // No rows persisted: fall back to profile primary AND persist it for future sessions
-        const uint8 primary = GetClass();
+        const uint8 primary = profile_primary;
 
         // Persist a primary row so the DB is never empty for this char
         auto ins = database.QueryDatabase(fmt::format(
@@ -1028,17 +1040,30 @@ void Client::LoadMultiClassFromDB()
             LogInfo("Seeded primary class {} for {} ({}) into character_classes", primary, GetCleanName(), CharacterID());
         }
 
-        classes[0] = primary;
-        i = 1;
+        if (primary >= 1 && primary <= 24) {
+            classes[0] = primary;
+            all_classes.clear();
+            all_classes.push_back(primary);
+            i = 1;
+        }
+    }
+    else if (all_classes.empty()) {
+        // rows existed but none were valid; ensure primary is still reflected
+        uint8 fallback = classes[0] ? classes[0] : profile_primary;
+        if (fallback >= 1 && fallback <= 24) {
+            all_classes.push_back(fallback);
+        }
     }
 
     m_classes = classes;
 
     // Build mask
     m_classes_mask = 0;
-    ForEachClass([&](uint8 c){
-        if (c >= 1 && c <= 16) { m_classes_mask |= (1u << (c - 1)); }
-    });
+    for (uint8 c : all_classes) {
+        if (c >= 1 && c <= 24) {
+            m_classes_mask |= (1u << (c - 1));
+        }
+    }
 
     LogInfo("[THJ] LoadMultiClassFromDB classes=({},{},{}) mask=0x{:08X}",
             m_classes[0], m_classes[1], m_classes[2], m_classes_mask);
@@ -1128,7 +1153,6 @@ void Client::HydrateMulticlassFromDB()
     for (auto row : r) {
         if (!row[0] || !row[1]) continue;
         int cls = std::atoi(row[0]);
-        if (cls < 1 || cls > 16) { continue; }
         int isp = std::atoi(row[1]);
         if (isp == 1) {
             found_primary = true;

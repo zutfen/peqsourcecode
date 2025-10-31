@@ -1,5 +1,7 @@
 OPTION(EQEMU_FETCH_MSVC_DEPENDENCIES_VCPKG "Automatically fetch vcpkg dependencies for MSCV" ON)
 OPTION(EQEMU_FETCH_MSVC_DEPENDENCIES_PERL "Automatically fetch perl dependencies for MSCV" ON)
+# When ON, prefer the portable Perl in the repo over any system Perl
+OPTION(EQEMU_USE_PORTABLE_PERL "Force use of portable bundled Perl (MSVC)" OFF)
 
 MARK_AS_ADVANCED(EQEMU_FETCH_MSVC_DEPENDENCIES_VCPKG)
 MARK_AS_ADVANCED(EQEMU_FETCH_MSVC_DEPENDENCIES_PERL)
@@ -60,35 +62,54 @@ IF(EQEMU_FETCH_MSVC_DEPENDENCIES_VCPKG)
 ENDIF()
 
 IF(EQEMU_FETCH_MSVC_DEPENDENCIES_PERL)
-	#Try to find perl first, (so you can use your active install first)
-	FIND_PACKAGE(PerlLibs)
-	
-	IF(NOT PerlLibs_FOUND)
-		MESSAGE(STATUS "Resolving perl dependencies...")
-		
-		IF(NOT EXISTS ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP})
-			EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/perl)
-			EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR})
-			
-			MESSAGE(STATUS "Downloading portable perl...")
-			FILE(DOWNLOAD ${EQEMU_PERL_URL} ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP} 
-				SHOW_PROGRESS
-				STATUS DOWNLOAD_STATUS)
-				
-			LIST(GET DOWNLOAD_STATUS 0 STATUS_CODE)
-			IF(NOT STATUS_CODE EQUAL 0)
-				MESSAGE(FATAL_ERROR "Was unable to download dependencies from ${EQEMU_PERL_URL}")
-			ENDIF()
-			
-			MESSAGE(STATUS "Extracting files...")
-			EXECUTE_PROCESS(
-				COMMAND ${CMAKE_COMMAND} -E tar xzf ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP}
-				WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}
-			)
-		ENDIF()
-		
-		SET(PERL_EXECUTABLE ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/bin/perl.exe CACHE FILEPATH "Path to perl program" FORCE)
-		SET(PERL_INCLUDE_PATH ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/lib/CORE CACHE PATH "Path to perl include files" FORCE)
-		SET(PERL_LIBRARY ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/lib/CORE/libperl524.a CACHE FILEPATH "Path to perl library" FORCE)
-	ENDIF()
+    # If user explicitly requests portable Perl, set it up now and override
+    IF(EQEMU_USE_PORTABLE_PERL)
+        MESSAGE(STATUS "Forcing use of portable Perl bundled with the repo...")
+        IF(NOT EXISTS ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP})
+            EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/perl)
+            EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR})
+            MESSAGE(STATUS "Downloading portable perl...")
+            FILE(DOWNLOAD ${EQEMU_PERL_URL} ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP}
+                SHOW_PROGRESS
+                STATUS DOWNLOAD_STATUS)
+            LIST(GET DOWNLOAD_STATUS 0 STATUS_CODE)
+            IF(NOT STATUS_CODE EQUAL 0)
+                MESSAGE(FATAL_ERROR "Was unable to download dependencies from ${EQEMU_PERL_URL}")
+            ENDIF()
+            MESSAGE(STATUS "Extracting files...")
+            EXECUTE_PROCESS(
+                COMMAND ${CMAKE_COMMAND} -E tar xzf ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP}
+                WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}
+            )
+        ENDIF()
+        SET(PERL_EXECUTABLE ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/bin/perl.exe CACHE FILEPATH "Path to perl program" FORCE)
+        SET(PERL_INCLUDE_PATH ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/lib/CORE CACHE PATH "Path to perl include files" FORCE)
+        SET(PERL_LIBRARY ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/lib/CORE/libperl524.a CACHE FILEPATH "Path to perl library" FORCE)
+    ELSE()
+        # Try to find a system perl first; if not found, fall back to portable
+        FIND_PACKAGE(PerlLibs)
+        IF(NOT PerlLibs_FOUND)
+            MESSAGE(STATUS "Resolving perl dependencies...")
+            IF(NOT EXISTS ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP})
+                EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/perl)
+                EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR})
+                MESSAGE(STATUS "Downloading portable perl...")
+                FILE(DOWNLOAD ${EQEMU_PERL_URL} ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP}
+                    SHOW_PROGRESS
+                    STATUS DOWNLOAD_STATUS)
+                LIST(GET DOWNLOAD_STATUS 0 STATUS_CODE)
+                IF(NOT STATUS_CODE EQUAL 0)
+                    MESSAGE(FATAL_ERROR "Was unable to download dependencies from ${EQEMU_PERL_URL}")
+                ENDIF()
+                MESSAGE(STATUS "Extracting files...")
+                EXECUTE_PROCESS(
+                    COMMAND ${CMAKE_COMMAND} -E tar xzf ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_ZIP}
+                    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}
+                )
+            ENDIF()
+            SET(PERL_EXECUTABLE ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/bin/perl.exe CACHE FILEPATH "Path to perl program" FORCE)
+            SET(PERL_INCLUDE_PATH ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/lib/CORE CACHE PATH "Path to perl include files" FORCE)
+            SET(PERL_LIBRARY ${PROJECT_SOURCE_DIR}/perl/${EQEMU_PERL_DIR}/perl/lib/CORE/libperl524.a CACHE FILEPATH "Path to perl library" FORCE)
+        ENDIF()
+    ENDIF()
 ENDIF()

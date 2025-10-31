@@ -1,0 +1,100 @@
+# Build directories
+build/
+cmake-build*/
+out/
+bin/
+lib/
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+
+# Visual Studio / MSVC
+.vs/
+*.vcxproj*
+*.sln
+*.vcproj*
+*.aps
+*.idb
+*.pdb
+*.ipch
+*.obj
+*.log
+*.tlog
+*.lastbuildstate
+*.user
+*.suo
+Debug/
+Release/
+x64/
+x86/
+
+# Compile outputs
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exp
+*.exe
+*.app
+*.db
+
+# Intermediate and generated files
+*.bsc
+*.pch
+*.pchi
+*.pdb
+*.rsp
+*.cache
+*.tmp
+*.temp
+*.stackdump
+*.gcda
+*.gcno
+*.gch
+*.d
+
+# IDE and editor metadata
+.idea/
+.vscode/
+*.code-workspace
+*.iml
+*.swp
+*.swn
+*.swo
+*.swm
+*.kate-swp
+*~
+*.orig
+
+# macOS, Windows, Linux extras
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.Trash-*
+*.crash
+
+# Package manager caches
+node_modules/
+vendor/
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.bz2
+*.7z
+*.rar
+
+# vcpkg
+vcpkg/
+vcpkg_installed/
+vcpkg-export*/
+*.list
+vcpkg/vcpkg-export-x64/.vcpkg-root

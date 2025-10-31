@@ -1447,6 +1447,9 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 	database.LoadCharacterEXPModifier(this); /* Load Character EXP Modifier */
 	database.LoadCharacterTitleSets(this); /* Load Character Title Sets */
 
+	// Prime multiclass cache before the player profile is built so translators can publish the mask
+	LoadMultiClassFromDB();
+	
 	// this pattern is strange
 	// this is remnants of the old way of doing things
 	auto mail_keys = database.GetMailKey(CharacterID());

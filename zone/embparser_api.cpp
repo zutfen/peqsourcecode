@@ -909,8 +909,8 @@ void Perl__respawn(int npc_type_id, int grid_id)
 
 perl::scalar Perl__ChooseRandom(perl::array options)
 {
-	int index = zone->random.Int(0, static_cast<int>(options.size()) - 1);
-	return options[index];
+    int index = zone->random.Int(0, static_cast<int>(options.size()) - 1);
+    return options.operator[]((size_t)index);
 }
 
 void Perl__set_proximity(float min_x, float max_x, float min_y, float max_y)
@@ -1163,20 +1163,20 @@ void Perl__taskselector(perl::array task_ids)
 	}
 
 	std::vector<int> tasks;
-	for (int i = 0; i < task_ids.size(); ++i)
-	{
-		tasks.push_back(task_ids[i]);
-	}
+    for (int i = 0; i < task_ids.size(); ++i)
+    {
+        tasks.push_back(static_cast<int>(task_ids.operator[]((size_t)i)));
+    }
 	quest_manager.taskselector(tasks);
 }
 
 void Perl__taskselector_nocooldown(perl::array task_ids)
 {
 	std::vector<int> tasks;
-	for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
-	{
-		tasks.push_back(task_ids[i]);
-	}
+    for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
+    {
+        tasks.push_back(static_cast<int>(task_ids.operator[]((size_t)i)));
+    }
 	quest_manager.taskselector(tasks, true);
 }
 
@@ -1194,11 +1194,11 @@ void Perl__enabletask(perl::array task_ids)
 {
 	int count = 0;
 	int tasks[MAXCHOOSERENTRIES];
-	for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
-	{
-		tasks[i] = task_ids[i];
-		++count;
-	}
+    for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
+    {
+        tasks[i] = static_cast<int>(task_ids.operator[]((size_t)i));
+        ++count;
+    }
 
 	quest_manager.enabletask(count, tasks);
 }
@@ -1207,11 +1207,11 @@ void Perl__disabletask(perl::array task_ids)
 {
 	int count = 0;
 	int tasks[MAXCHOOSERENTRIES];
-	for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
-	{
-		tasks[i] = task_ids[i];
-		++count;
-	}
+    for (int i = 0; i < task_ids.size() && i < MAXCHOOSERENTRIES; ++i)
+    {
+        tasks[i] = static_cast<int>(task_ids.operator[]((size_t)i));
+        ++count;
+    }
 
 	quest_manager.disabletask(count, tasks);
 }
@@ -4710,20 +4710,20 @@ void Perl__worldwideupdateactivity(uint32 task_id, int activity_id, int update_c
 bool Perl__isnpcspawned(perl::array npc_id_array)
 {
 	std::vector<uint32> npc_ids;
-	for (int i = 0; i < npc_id_array.size(); ++i)
-	{
-		npc_ids.push_back(static_cast<uint32_t>(npc_id_array[i]));
-	}
+    for (int i = 0; i < npc_id_array.size(); ++i)
+    {
+        npc_ids.push_back(static_cast<uint32_t>(npc_id_array.operator[]((size_t)i)));
+    }
 	return entity_list.IsNPCSpawned(npc_ids);
 }
 
 uint32_t Perl__countspawnednpcs(perl::array npc_id_array)
 {
 	std::vector<uint32> npc_ids;
-	for (int i = 0; i < npc_id_array.size(); ++i)
-	{
-		npc_ids.push_back(static_cast<uint32_t>(npc_id_array[i]));
-	}
+    for (int i = 0; i < npc_id_array.size(); ++i)
+    {
+        npc_ids.push_back(static_cast<uint32_t>(npc_id_array.operator[]((size_t)i)));
+    }
 	return entity_list.CountSpawnedNPCs(npc_ids);
 }
 

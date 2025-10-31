@@ -133,10 +133,14 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-#ifdef _WIN64
-using ssize_t = __int64;
-#else
-using ssize_t = long;
+// Ensure ssize_t is defined consistently on Windows without conflicting
+// with other libraries (e.g., libuv) that may also define it.
+#include <stdint.h>
+#if !defined(_SSIZE_T_) && !defined(_SSIZE_T_DEFINED)
+// Match libuv's definition exactly to avoid conflicting typedefs
+typedef intptr_t ssize_t;
+# define _SSIZE_T_
+# define _SSIZE_T_DEFINED
 #endif
 #endif // _MSC_VER
 

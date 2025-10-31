@@ -746,9 +746,9 @@ perl::array Perl_EntityList_GetNPCsByExcludedIDs(EntityList* self, perl::array n
 {
 	std::vector<uint32> ids;
 
-	for (int i = 0; i < npc_ids.size(); i++) {
-		ids.emplace_back(npc_ids[i]);
-	}
+    for (int i = 0; i < npc_ids.size(); i++) {
+        ids.emplace_back(static_cast<uint32_t>(npc_ids.operator[]((size_t)i)));
+    }
 
 	const auto& l = self->GetExcludedNPCsByIDs(ids);
 
@@ -765,9 +765,9 @@ perl::array Perl_EntityList_GetNPCsByIDs(EntityList* self, perl::array npc_ids)
 {
 	std::vector<uint32> ids;
 
-	for (int i = 0; i < npc_ids.size(); i++) {
-		ids.emplace_back(npc_ids[i]);
-	}
+    for (int i = 0; i < npc_ids.size(); i++) {
+        ids.emplace_back(static_cast<uint32_t>(npc_ids.operator[]((size_t)i)));
+    }
 
 	const auto& l = self->GetNPCsByIDs(ids);
 

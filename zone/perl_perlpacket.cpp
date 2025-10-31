@@ -55,10 +55,10 @@ void Perl_PerlPacket_FromArray(PerlPacket* self, perl::reference avref, uint32_t
 	perl::array av_numbers = avref;
 	int* numbers = new int[av_numbers.size()];
 
-	for (int i = 0; i < av_numbers.size(); ++i)
-	{
-		numbers[i] = av_numbers[i];
-	}
+    for (int i = 0; i < av_numbers.size(); ++i)
+    {
+        numbers[i] = static_cast<int>(av_numbers.operator[]((size_t)i));
+    }
 
 	self->FromArray(numbers, length);
 

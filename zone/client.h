@@ -459,6 +459,7 @@ public:
     bool HasSecondaryClass(uint8 cls) const;
     uint8 GetPrimaryClass() const { return GetClass(); }
 	void   LoadMultiClassFromDB();
+	void   PersistMultiClassToDB();
 	// Login-time DB hydrate (read-only) — call once on connect
     void HydrateMulticlassFromDB();
 	uint16 MergedSkillCap(EQ::skills::SkillType skill_id, uint8 level) const;

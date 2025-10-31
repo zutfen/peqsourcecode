@@ -1057,6 +1057,18 @@ void Client::LoadMultiClassFromDB()
 
     m_classes = classes;
 
+    // Keep runtime secondary cache aligned for early consumers
+    {
+        std::vector<int> secondaries;
+        secondaries.reserve(all_classes.size());
+        for (auto cls : all_classes) {
+            if (cls && cls != classes[0]) {
+                secondaries.push_back(static_cast<int>(cls));
+            }
+        }
+        SetSecondaryClassesFromList(secondaries);
+    }
+
     // Build mask
     m_classes_mask = 0;
     for (uint8 c : all_classes) {
@@ -1073,6 +1085,86 @@ void Client::LoadMultiClassFromDB()
 
 
 // -------- Multiclass: merged skill cap (max across classes) --------
+void Client::PersistMultiClassToDB()
+{
+    auto add_unique = [](std::vector<int>& vec, int cls) {
+        if (cls < 1 || cls > 16)
+            return;
+        if (std::find(vec.begin(), vec.end(), cls) == vec.end()) {
+            vec.push_back(cls);
+        }
+    };
+
+    std::vector<int> persist;
+    persist.reserve(3);
+    add_unique(persist, static_cast<int>(GetClass()));
+
+    for (uint8 cls : m_multiclass_secondaries) {
+        add_unique(persist, static_cast<int>(cls));
+    }
+    for (uint8 cls : m_classes) {
+        add_unique(persist, static_cast<int>(cls));
+    }
+
+    if (persist.empty())
+        return;
+
+    if (persist.size() > 3)
+        persist.resize(3);
+
+    std::string in_list;
+    in_list.reserve(persist.size() * 3);
+    for (size_t i = 0; i < persist.size(); ++i) {
+        if (i)
+            in_list += ",";
+        in_list += std::to_string(persist[i]);
+
+        int is_primary = (persist[i] == static_cast<int>(GetClass())) ? 1 : 0;
+        auto q = fmt::format(
+            "INSERT INTO character_classes (char_id, class_id, is_primary) "
+            "VALUES ({}, {}, {}) "
+            "ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)",
+            CharacterID(), persist[i], is_primary);
+        auto r = database.QueryDatabase(q);
+        if (!r.Success()) {
+            LogError("[Multiclass] Persist upsert failed for CharID {} class {}: {}",
+                CharacterID(), persist[i], r.ErrorMessage().c_str());
+        }
+    }
+
+    if (!in_list.empty()) {
+        auto dq = fmt::format(
+            "DELETE FROM character_classes "
+            "WHERE char_id = {} AND class_id BETWEEN 1 AND 16 AND class_id NOT IN ({})",
+            CharacterID(), in_list);
+        auto dr = database.QueryDatabase(dq);
+        if (!dr.Success()) {
+            LogError("[Multiclass] Persist prune failed for CharID {}: {}",
+                CharacterID(), dr.ErrorMessage().c_str());
+        }
+    }
+
+    // Sync internal caches from the canonical list
+    std::array<uint8, 3> synced{{0,0,0}};
+    uint32 mask = 0;
+    for (size_t i = 0; i < persist.size() && i < synced.size(); ++i) {
+        synced[i] = static_cast<uint8>(persist[i]);
+    }
+    for (int cls : persist) {
+        mask |= (1u << (cls - 1));
+    }
+    m_classes = synced;
+    m_classes_mask = mask;
+    std::vector<int> secondaries;
+    for (size_t i = 0; i < persist.size(); ++i) {
+        if (persist[i] != static_cast<int>(GetClass())) {
+            secondaries.push_back(persist[i]);
+        }
+    }
+    SetSecondaryClassesFromList(secondaries);
+    THJ::SetMulticlassMask(CharacterID(), mask);
+}
+
 uint16 Client::MergedSkillCap(EQ::skills::SkillType skill_id, uint8 level) const
 {
     uint16 best = 0;
@@ -1306,6 +1398,8 @@ database.SavePetInfo(this);
 	database.SaveCharacterData(this, &m_pp, &m_epp); /* Save Character Data */
 
 	database.SaveCharacterEXPModifier(this);
+
+	PersistMultiClassToDB();
 
 	if (RuleB(Bots, Enabled)) {
 		database.botdb.SaveBotSettings(this);

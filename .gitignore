@@ -91,3 +91,10 @@ vendor/
 *.bz2
 *.7z
 *.rar
+
+# vcpkg
+vcpkg/
+vcpkg_installed/
+vcpkg-export*/
+*.list
+vcpkg/vcpkg-export-x64/.vcpkg-root

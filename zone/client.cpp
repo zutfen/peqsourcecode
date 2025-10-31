@@ -1095,9 +1095,11 @@ void Client::PersistMultiClassToDB()
         }
     };
 
+    int primary_class = m_classes[0] ? m_classes[0] : GetClass();
+
     std::vector<int> persist;
     persist.reserve(3);
-    add_unique(persist, static_cast<int>(GetClass()));
+    add_unique(persist, primary_class);
 
     for (uint8 cls : m_multiclass_secondaries) {
         add_unique(persist, static_cast<int>(cls));
@@ -1121,7 +1123,7 @@ void Client::PersistMultiClassToDB()
     }
 
     for (int cls : persist) {
-        int is_primary = (cls == static_cast<int>(GetClass())) ? 1 : 0;
+        int is_primary = (cls == primary_class) ? 1 : 0;
         auto ins = database.QueryDatabase(fmt::format(
             "INSERT INTO character_classes (char_id, class_id, is_primary) "
             "VALUES ({}, {}, {})",
@@ -1139,13 +1141,15 @@ void Client::PersistMultiClassToDB()
         synced[i] = static_cast<uint8>(persist[i]);
     }
     for (int cls : persist) {
-        mask |= (1u << (cls - 1));
+        if (cls >= 1 && cls <= 16) {
+            mask |= (1u << (cls - 1));
+        }
     }
     m_classes = synced;
     m_classes_mask = mask;
     std::vector<int> secondaries;
     for (int cls : persist) {
-        if (cls != static_cast<int>(GetClass())) {
+        if (cls != primary_class) {
             secondaries.push_back(cls);
         }
     }
@@ -1246,6 +1250,7 @@ void Client::HydrateMulticlassFromDB()
     if (found_primary && db_primary > 0 && db_primary != static_cast<int>(GetClass())) {
         // Update the profile’s class field; keep any additional caches in sync if you have them
         m_pp.class_ = static_cast<uint8>(db_primary);
+        class_ = static_cast<uint8>(db_primary);
         // If there’s any class-derived state that must be recomputed, do it here.
         // (Skills/spells recalcs typically happen elsewhere after connect.)
     }
@@ -1254,7 +1259,7 @@ void Client::HydrateMulticlassFromDB()
 
     LogInfo("[Multiclass] Hydrated CharID={} Primary={} Secondaries=[{}]",
         CharacterID(),
-        static_cast<int>(GetClass()),
+        db_primary,
         [&](){
             std::string s;
             for (size_t i = 0; i < m_multiclass_secondaries.size(); ++i) {
@@ -1264,6 +1269,28 @@ void Client::HydrateMulticlassFromDB()
             return s;
         }()
     );
+
+    // Refresh compact cache and mask so persistence remains aligned
+    std::array<uint8, 3> classes{{0,0,0}};
+    classes[0] = static_cast<uint8>(db_primary);
+    size_t idx = 1;
+    for (uint8 cls : m_multiclass_secondaries) {
+        if (idx >= classes.size())
+            break;
+        classes[idx++] = cls;
+    }
+    m_classes = classes;
+
+    m_classes_mask = 0;
+    if (db_primary >= 1 && db_primary <= 16) {
+        m_classes_mask |= (1u << (db_primary - 1));
+    }
+    for (uint8 cls : m_multiclass_secondaries) {
+        if (cls >= 1 && cls <= 16) {
+            m_classes_mask |= (1u << (cls - 1));
+        }
+    }
+    THJ::SetMulticlassMask(CharacterID(), m_classes_mask);
 }
 bool Client::Save(uint8 iCommitNow) {
 	if(!ClientDataLoaded())

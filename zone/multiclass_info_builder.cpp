@@ -97,7 +97,23 @@ static void BuildAndSendMulticlassInfo(Client* c) {
 
 void Client::SendMulticlassInfo()
 {
-    BuildAndSendMulticlassInfo(this);
+    // Send simple uint32_t mask packet for client multiclass handler
+    // Client expects: opcode 0x7F01 with just the 4-byte class mask
+    uint32_t mask = GetClassesMask();
+
+    if (!mask) {
+        // Fallback to current class if no mask is set
+        mask = GetPlayerClassBit(GetClass());
+    }
+
+    LogInfo("[THJ] SendMulticlassInfo char_id={} mask=0x{:08X}",
+            CharacterID(), mask);
+
+    // Create packet with just the uint32_t mask
+    auto outapp = new EQApplicationPacket(OP_MulticlassInfo, sizeof(uint32_t));
+    *(uint32_t*)outapp->pBuffer = mask;
+
+    FastQueuePacket(&outapp);
 }
 static void GatherClasses(Client* c, std::vector<McClass>& out)
 {

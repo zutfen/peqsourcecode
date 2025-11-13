@@ -2641,14 +2641,20 @@ namespace RoF2
 		outapp->WriteUInt32(emu->AGI);
 		outapp->WriteUInt32(emu->WIS);
 
-		outapp->WriteUInt32(0);			// Unknown
-		outapp->WriteUInt32(0);			// Unknown
-		outapp->WriteUInt32(0);			// Unknown
-		outapp->WriteUInt32(0);			// Unknown
-		outapp->WriteUInt32(0);			// Unknown
-		outapp->WriteUInt32(0);			// Unknown
-		outapp->WriteUInt32(0);			// Unknown
-
+		uint32_t gestaltMask = emu->thj_class_mask;
+		if (gestaltMask == 0) {
+			gestaltMask = THJ::GetMulticlassMask(emu->char_id);
+			if (gestaltMask == 0 && emu->class_ >= 1 && emu->class_ <= 16) {
+				gestaltMask = (1u << (emu->class_ - 1));
+			}
+		}
+		outapp->WriteUInt32(gestaltMask);	// THJ multiclass mask
+		outapp->WriteUInt32(0);		// Unknown
+		outapp->WriteUInt32(0);		// Unknown
+		outapp->WriteUInt32(0);		// Unknown
+		outapp->WriteUInt32(0);		// Unknown
+		outapp->WriteUInt32(0);		// Unknown
+		outapp->WriteUInt32(0);		// Unknown
 		outapp->WriteUInt32(300);		// AA Count
 
 		for (uint32 r = 0; r < MAX_PP_AA_ARRAY; r++)
@@ -3098,9 +3104,12 @@ namespace RoF2
 		outapp->WriteUInt32(emu->char_id);		// character_id
 
 		// THJ: publish gestalt bitmask at offset 0x4C70 for the client hook.
-		uint32_t mask = THJ::GetMulticlassMask(emu->char_id);
-		if (mask == 0 && emu->class_ >= 1 && emu->class_ <= 16) {
-			mask = (1u << (emu->class_ - 1));
+		uint32_t mask = emu->thj_class_mask;
+		if (mask == 0) {
+			mask = THJ::GetMulticlassMask(emu->char_id);
+			if (mask == 0 && emu->class_ >= 1 && emu->class_ <= 16) {
+				mask = (1u << (emu->class_ - 1));
+			}
 		}
 		if (PacketSize > 0x4C74) {
 			*reinterpret_cast<uint32_t*>(outapp->pBuffer + 0x4C70) = mask;

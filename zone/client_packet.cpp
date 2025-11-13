@@ -1105,6 +1105,8 @@ void Client::Handle_Connect_OP_SendAAStats(const EQApplicationPacket *app)
 void Client::Handle_Connect_OP_SendAATable(const EQApplicationPacket *app)
 {
 	SendAlternateAdvancementTable();
+	SendMulticlassInfo();
+	SendGestaltMulticlassInfo();
 	return;
 }
 

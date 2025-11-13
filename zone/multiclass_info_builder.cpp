@@ -1,5 +1,6 @@
 #include "op_multiclass_info.h"
 #include "../common/eq_stream.h"
+#include "../common/thj_multiclass.h"
 #include "../common/packet_functions.h"
 #include "client.h"
 #include <algorithm>
@@ -48,7 +49,7 @@ static std::vector<uint8_t> Serialize(const MulticlassInfo& hdr,
     return buf;
 }
 
-void SendMulticlassInfo(Client* c) {
+static void BuildAndSendMulticlassInfo(Client* c) {
     if (!c) return;
 
     std::vector<McClass>  classes;
@@ -84,11 +85,63 @@ void SendMulticlassInfo(Client* c) {
             abilities.size());
 
     THJ::SetMulticlassMask(c->CharacterID(), class_mask);
+    c->SetBucket("GestaltClasses", std::to_string(class_mask));
 
     auto bytes = Serialize(hdr, classes, aas, spells, skills, discs, abilities);
 
     // Queue as a single packet:
-    auto out = new EQApplicationPacket(OP_MULTICLASS_INFO, bytes.size());
+    auto out = new EQApplicationPacket(OP_MulticlassInfo, bytes.size());
     memcpy(out->pBuffer, bytes.data(), bytes.size());
     c->FastQueuePacket(&out);
+}
+
+void Client::SendMulticlassInfo()
+{
+    BuildAndSendMulticlassInfo(this);
+}
+static void GatherClasses(Client* c, std::vector<McClass>& out)
+{
+    out.clear();
+    if (!c)
+        return;
+
+    out.reserve(3);
+    c->ForEachClass([&](uint8 cls) {
+        if (!cls)
+            return;
+        McClass entry{};
+        entry.class_id = cls;
+        entry.level = static_cast<uint8>(std::min<uint8>(c->GetLevel(), 255));
+        out.push_back(entry);
+    });
+}
+
+static void GatherAAs(Client* c, std::vector<McAA>& out)
+{
+    out.clear();
+    (void)c;
+}
+
+static void GatherSpells(Client* c, std::vector<McSpell>& out)
+{
+    out.clear();
+    (void)c;
+}
+
+static void GatherSkills(Client* c, std::vector<McSkill>& out)
+{
+    out.clear();
+    (void)c;
+}
+
+static void GatherDiscs(Client* c, std::vector<McDisc>& out)
+{
+    out.clear();
+    (void)c;
+}
+
+static void GatherAbilities(Client* c, std::vector<McAbility>& out)
+{
+    out.clear();
+    (void)c;
 }

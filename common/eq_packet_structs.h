@@ -990,7 +990,7 @@ struct PlayerProfile_Struct
 /*2460*/	uint32				points;				// Unspent Practice points
 /*2464*/	uint32				mana;				// current mana
 /*2468*/	uint32				cur_hp;				// current hp
-/*2472*/	uint32				unknown2508;		// 0x05
+/*2472*/	uint32				thj_class_mask;		// Gestalt (multiclass) bitmask
 /*2476*/	uint32				STR;				// Strength
 /*2480*/	uint32				STA;				// Stamina
 /*2484*/	uint32				CHA;				// Charisma
@@ -6559,6 +6559,22 @@ struct EvolveGetNextItem {
 	uint64 new_current_amount;
 	uint64 from_current_amount;
 	uint32 max_transfer_level;
+};
+
+struct GestaltClassEntry_Struct {
+	uint8 class_id;
+	uint8 level;
+};
+
+struct GestaltMulticlassInfo_Struct {
+	uint32 char_id;
+	uint8  class_count;
+	uint16 aa_count;
+	uint16 spell_count;
+	uint16 skill_count;
+	uint16 disc_count;
+	uint16 ability_count;
+	// followed by GestaltClassEntry_Struct[class_count]
 };
 
 // Restore structure packing to default

@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <algorithm>
+#include <array>
 #include <vector>
 
 // for windows compile
@@ -1080,6 +1081,7 @@ void Client::LoadMultiClassFromDB()
     LogInfo("[THJ] LoadMultiClassFromDB classes=({},{},{}) mask=0x{:08X}",
             m_classes[0], m_classes[1], m_classes[2], m_classes_mask);
 
+    m_pp.thj_class_mask = m_classes_mask;
     THJ::SetMulticlassMask(CharacterID(), m_classes_mask);
 }
 
@@ -1154,6 +1156,9 @@ void Client::PersistMultiClassToDB()
         }
     }
     SetSecondaryClassesFromList(secondaries);
+    m_pp.thj_class_mask = m_classes_mask;
+    SendMulticlassInfo();
+    SendGestaltMulticlassInfo();
     THJ::SetMulticlassMask(CharacterID(), mask);
 }
 
@@ -1208,6 +1213,50 @@ void Client::SetSecondaryClassesFromList(const std::vector<int>& list)
         std::unique(m_multiclass_secondaries.begin(), m_multiclass_secondaries.end()),
         m_multiclass_secondaries.end()
     );
+}
+
+void Client::SendGestaltMulticlassInfo()
+{
+    if (!RuleB(Custom, MulticlassingEnabled)) {
+        return;
+    }
+
+    uint32 mask = GetClassesMask();
+    if (!mask) {
+        mask = GetPlayerClassBit(GetClass());
+    }
+
+    std::array<uint8, Class::PLAYER_CLASS_COUNT> class_ids{};
+    uint8 class_count = 0;
+
+    for (uint8 class_id = Class::Warrior; class_id <= Class::Berserker; ++class_id) {
+        if (mask & GetPlayerClassBit(class_id)) {
+            class_ids[class_count++] = class_id;
+        }
+    }
+
+    if (class_count == 0) {
+        class_ids[class_count++] = GetClass();
+    }
+
+    auto payload_size = sizeof(GestaltMulticlassInfo_Struct) + (class_count * sizeof(GestaltClassEntry_Struct));
+    auto app = new EQApplicationPacket(OP_GestaltMulticlassInfo, payload_size);
+    auto* payload = reinterpret_cast<GestaltMulticlassInfo_Struct*>(app->pBuffer);
+    payload->char_id = CharacterID();
+    payload->class_count = class_count;
+    payload->aa_count = 0;
+    payload->spell_count = 0;
+    payload->skill_count = 0;
+    payload->disc_count = 0;
+    payload->ability_count = 0;
+
+    auto* entries = reinterpret_cast<GestaltClassEntry_Struct*>(payload + 1);
+    for (uint8 index = 0; index < class_count; ++index) {
+        entries[index].class_id = class_ids[index];
+        entries[index].level = static_cast<uint8>(std::min<uint8>(GetLevel(), 255));
+    }
+
+    FastQueuePacket(&app);
 }
 
 void Client::HydrateMulticlassFromDB()
@@ -1290,6 +1339,8 @@ void Client::HydrateMulticlassFromDB()
             m_classes_mask |= (1u << (cls - 1));
         }
     }
+    m_pp.thj_class_mask = m_classes_mask;
+    SetBucket("GestaltClasses", std::to_string(m_classes_mask));
     THJ::SetMulticlassMask(CharacterID(), m_classes_mask);
 }
 bool Client::Save(uint8 iCommitNow) {

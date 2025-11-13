@@ -2,6 +2,7 @@
 #include "../common/eq_stream.h"
 #include "../common/thj_multiclass.h"
 #include "../common/packet_functions.h"
+#include "../common/emu_versions.h"
 #include "client.h"
 #include <algorithm>
 
@@ -97,6 +98,8 @@ static void BuildAndSendMulticlassInfo(Client* c) {
 
 void Client::SendMulticlassInfo()
 {
+    constexpr uint16 kGestaltOpcode = 0x7F01;
+
     // Send simple uint32_t mask packet for client multiclass handler
     // Client expects: opcode 0x7F01 with just the 4-byte class mask
     uint32_t mask = GetClassesMask();
@@ -104,16 +107,76 @@ void Client::SendMulticlassInfo()
     if (!mask) {
         // Fallback to current class if no mask is set
         mask = GetPlayerClassBit(GetClass());
+            LogInfo("[THJ] SendMulticlassInfo: No mask found, using fallback class bit. char_id={} mask=0x{:08X}",
+
+                CharacterID(), mask);
+
     }
 
-    LogInfo("[THJ] SendMulticlassInfo char_id={} mask=0x{:08X}",
-            CharacterID(), mask);
+ 
+
+    const auto client_version = ClientVersion();
+    const uint32 client_version_bit = ClientVersionBit();
+    const char *client_version_name = EQ::versions::ClientVersionName(client_version);
+
+    uint16 eq_opcode = 0;
+    if (Connection() && Connection()->GetOpcodeManager()) {
+        eq_opcode = Connection()->GetOpcodeManager()->EmuToEQ(OP_MulticlassInfo);
+    }
+
+    bool forced_opcode = false;
+    if (!eq_opcode) {
+        eq_opcode = kGestaltOpcode;
+        forced_opcode = true;
+    }
+
+    LogInfo("[THJ] SendMulticlassInfo: Sending packet to char_id={} with mask=0x{:08X} (size={} bytes) version={} bit=0x{:08X} eq_opcode=0x{:04X}",
+            CharacterID(),
+            mask,
+            sizeof(uint32_t),
+            client_version_name ? client_version_name : "Unknown",
+            client_version_bit,
+            eq_opcode);
+
+ 
 
     // Create packet with just the uint32_t mask
+
     auto outapp = new EQApplicationPacket(OP_MulticlassInfo, sizeof(uint32_t));
+
+    if (!outapp || !outapp->pBuffer) {
+
+        LogError("[THJ] SendMulticlassInfo: Failed to allocate packet!");
+
+        return;
+
+    }
+
+ 
+
     *(uint32_t*)outapp->pBuffer = mask;
 
+ 
+
+    // If we had to force the opcode, bypass the opcode manager so the raw EQ opcode is used.
+    if (forced_opcode) {
+        outapp->SetOpcodeBypass(eq_opcode);
+        LogInfo("[THJ] SendMulticlassInfo: Forced opcode bypass to 0x{:04X}", eq_opcode);
+    }
+
+    // Log the actual bytes being sent for debugging
+
+    LogInfo("[THJ] SendMulticlassInfo: Packet bytes: {:02X} {:02X} {:02X} {:02X}",
+
+            outapp->pBuffer[0], outapp->pBuffer[1], outapp->pBuffer[2], outapp->pBuffer[3]);
+
+ 
+
     FastQueuePacket(&outapp);
+
+ 
+
+    LogInfo("[THJ] SendMulticlassInfo: Packet queued successfully");
 }
 static void GatherClasses(Client* c, std::vector<McClass>& out)
 {

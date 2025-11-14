@@ -1158,7 +1158,6 @@ void Client::PersistMultiClassToDB()
     SetSecondaryClassesFromList(secondaries);
     m_pp.thj_class_mask = m_classes_mask;
     SendMulticlassInfo();
-    SendGestaltMulticlassInfo();
     THJ::SetMulticlassMask(CharacterID(), mask);
 }
 
